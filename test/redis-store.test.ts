@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { RedisStore } from "../src/stores/redis-store";
 import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
 
-const TEST_PREFIX = "redislimit:test:store";
+const TEST_PREFIX = "limitly:test:store";
 
 describe("RedisStore", () => {
   const redisPromise = getTestRedis();

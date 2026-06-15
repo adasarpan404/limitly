@@ -1,5 +1,5 @@
 {
-  "name": "redislimit-express-example",
+  "name": "limitly-express-example",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,6 @@
   "dependencies": {
     "express": "^4.19.2",
     "ioredis": "^5.4.1",
-    "redislimit": "file:../.."
+    "limitly": "file:../.."
   }
 }

@@ -192,6 +192,26 @@ describe("createExpressMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("calls onMetrics hook when provided", async () => {
+    const onMetrics = vi.fn();
+    const middleware = createExpressMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      onMetrics,
+    });
+
+    const { req, res, next } = createMockReqRes();
+    await middleware(req, res, next);
+
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "allowed",
+        key: "unknown",
+      })
+    );
+  });
+
   it("works with token-bucket algorithm", async () => {
     const middleware = createExpressMiddleware(limiter)({
       algorithm: "token-bucket",

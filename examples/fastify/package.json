@@ -1,5 +1,5 @@
 {
-  "name": "redislimit-fastify-example",
+  "name": "limitly-fastify-example",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,6 @@
   "dependencies": {
     "fastify": "^4.28.0",
     "ioredis": "^5.4.1",
-    "redislimit": "file:../.."
+    "limitly": "file:../.."
   }
 }

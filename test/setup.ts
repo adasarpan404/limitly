@@ -25,7 +25,7 @@ export async function getTestRedis(): Promise<Redis | null> {
   }
 }
 
-export async function flushTestKeys(client: Redis, prefix = "redislimit:test"): Promise<void> {
+export async function flushTestKeys(client: Redis, prefix = "limitly:test"): Promise<void> {
   const keys = await client.keys(`${prefix}*`);
   if (keys.length > 0) {
     await client.del(...keys);

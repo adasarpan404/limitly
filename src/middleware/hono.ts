@@ -2,6 +2,7 @@ import type { Context, Next } from "hono";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
+import { consumeRateLimit } from "../utils/metrics";
 
 const DEFAULT_KEY = (c: Context): string => {
   const forwarded = c.req.header("x-forwarded-for");
@@ -33,16 +34,23 @@ export function createHonoMiddleware(limiter: RedisLimit) {
 
     return async (c: Context, next: Next): Promise<Response | void> => {
       const key = keyExtractor(c) ?? "unknown";
+      const outcome = await consumeRateLimit({
+        strategy,
+        key,
+        options,
+        failOpen,
+        storeType: limiter.getStoreType(),
+        context: c,
+      });
 
-      let result;
-      try {
-        result = await strategy.consume(key);
-      } catch {
+      if (outcome.status === "error") {
         if (failOpen) {
           return next();
         }
         return c.json({ error: "Service Unavailable" }, 503);
       }
+
+      const result = outcome.result;
 
       if (sendHeaders) {
         setHonoHeaders(c, buildRateLimitHeaders(result));

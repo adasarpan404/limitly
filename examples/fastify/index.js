@@ -1,12 +1,15 @@
 import Fastify from "fastify";
 import Redis from "ioredis";
-import { createLimiter } from "redislimit";
+import { createLimiter } from "limitly";
+import { createMetricsHook } from "../shared/metrics.js";
 
 const fastify = Fastify({ logger: false });
 const redis = new Redis();
+const { onMetrics } = createMetricsHook("fastify");
 
 // Case 5: failOpen=true — if Redis goes down, traffic is allowed through instead of erroring
-const limiter = createLimiter({ redis, failOpen: true });
+// Global onMetrics fires for plugin middleware and limiter.check() calls
+const limiter = createLimiter({ redis, failOpen: true, onMetrics });
 
 // Case 1: Global token-bucket rate limit keyed by IP
 // Covers all routes; allows bursts up to 50 tokens, refills at 10/sec
@@ -93,7 +96,7 @@ fastify.get("/", async () => {
       "GET /admin/dashboard": "sliding-window, 3 req/30s, custom 429 handler",
       "GET /": "covered by global token-bucket (50 cap / 10 refill per IP)",
     },
-    note: "failOpen=true: Redis failures allow traffic through instead of returning 503",
+    note: "failOpen=true: Redis failures allow traffic through instead of returning 503; onMetrics logs allowed/blocked/error/fail_open to stdout",
   };
 });
 
@@ -105,4 +108,4 @@ console.log("  Case 1 — token-bucket (global, IP):       GET  /");
 console.log("  Case 2 — sliding-window (login guard):    POST /auth/login");
 console.log("  Case 3 — token-bucket (API-key):          GET  /api/data");
 console.log("  Case 4 — sliding-window (custom handler): GET  /admin/dashboard");
-console.log("  Case 5 — failOpen=true configured on createLimiter");
+console.log("  Case 5 — failOpen=true + global onMetrics on createLimiter");

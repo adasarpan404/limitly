@@ -1,6 +1,6 @@
 # limitly
 
-Distributed, Redis-powered rate limiting for Express, Fastify, Hono, Koa, and NestJS.
+Distributed, Redis-powered rate limiting for Express, Fastify, Hono, Koa, Bun, and NestJS.
 
 > Express-rate-limit, but distributed, Redis-powered, and production ready.
 
@@ -95,6 +95,29 @@ app.use(
 );
 ```
 
+### Bun
+
+```typescript
+import Redis from "ioredis";
+import { composeBunHandler, createLimiter } from "limitly";
+
+const limiter = createLimiter({ redis: new Redis() });
+
+const rateLimit = limiter.bunMiddleware({
+  algorithm: "sliding-window",
+  limit: 100,
+  window: 60,
+  key: (req) => req.headers.get("x-api-key"),
+});
+
+const fetch = composeBunHandler(
+  [rateLimit],
+  () => Response.json({ message: "Hello Bun!" })
+);
+
+Bun.serve({ port: 3000, fetch });
+```
+
 ### NestJS
 
 ```typescript
@@ -151,6 +174,37 @@ import { limitlyNestModule } from "limitly/nest";
   ],
 })
 export class AppModule {}
+```
+
+## Default Algorithm
+
+If you omit algorithm options, limitly uses **sliding-window** with `limit: 100` and `window: 60`:
+
+```typescript
+const limiter = createLimiter({ redis: new Redis() });
+
+app.use(limiter.middleware({ key: (req) => req.ip }));
+
+// equivalent to:
+app.use(
+  limiter.middleware({
+    algorithm: "sliding-window",
+    limit: 100,
+    window: 60,
+    key: (req) => req.ip,
+  })
+);
+```
+
+Set limiter-wide defaults:
+
+```typescript
+const limiter = createLimiter({
+  redis: new Redis(),
+  default: { limit: 50, window: 30 },
+});
+
+app.use(limiter.middleware({ key: (req) => req.ip }));
 ```
 
 ## Algorithms
@@ -227,6 +281,8 @@ createLimiter({ memcached: new Memcached(["localhost:11211"]) });
 
 ## Key Extraction
 
+The `key` option identifies **who** is being rate limited (per request):
+
 ```typescript
 // IP-based
 key: (req) => req.ip;
@@ -236,6 +292,29 @@ key: (req) => req.headers["x-api-key"];
 
 // User ID
 key: (req) => req.user.id;
+```
+
+## Storage Key Prefix
+
+The `keyPrefix` option controls **where** counters are stored in Redis/Memcached.
+Default is `limitly`:
+
+```typescript
+createLimiter({ redis: new Redis() });
+// stores keys like: limitly:sw:203.0.113.1
+
+createLimiter({
+  redis: new Redis(),
+  keyPrefix: "myapp:prod",
+});
+// stores keys like: myapp:prod:sw:203.0.113.1
+```
+
+Key format:
+
+```
+{keyPrefix}:sw:{id}   — sliding window
+{keyPrefix}:tb:{id}   — token bucket
 ```
 
 ## Response Headers

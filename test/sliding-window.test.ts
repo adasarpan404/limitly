@@ -3,7 +3,7 @@ import { SlidingWindowStrategy } from "../src/algorithms/sliding-window";
 import { RedisStore } from "../src/stores/redis-store";
 import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
 
-const TEST_PREFIX = "redislimit:test:sw";
+const TEST_PREFIX = "limitly:test:sw";
 
 describe("SlidingWindowStrategy", () => {
   const redisPromise = getTestRedis();

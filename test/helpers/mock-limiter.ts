@@ -18,6 +18,7 @@ export function createMockLimiter(
     } satisfies RateLimitResult);
 
   const limiter = {
+    getStoreType: vi.fn(() => "redis" as const),
     createStrategy: vi.fn(() => ({ consume })),
   } as unknown as RedisLimit;
 

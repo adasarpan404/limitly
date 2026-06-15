@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { RedisLimit } from "../src/limiter";
 import { createHonoMiddleware } from "../src/middleware/hono";
+import { createMockLimiter } from "./helpers/mock-limiter";
 
 function createMockContext(overrides?: {
   headers?: Record<string, string>;
@@ -33,15 +33,12 @@ function createMockContext(overrides?: {
 }
 
 describe("createHonoMiddleware", () => {
-  let limiter: RedisLimit;
+  let limiter: ReturnType<typeof createMockLimiter>["limiter"];
   let consume: ReturnType<typeof vi.fn>;
   let next: Next;
 
   beforeEach(() => {
-    consume = vi.fn();
-    limiter = {
-      createStrategy: vi.fn(() => ({ consume })),
-    } as unknown as RedisLimit;
+    ({ limiter, consume } = createMockLimiter());
     next = vi.fn();
   });
 

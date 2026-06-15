@@ -13,37 +13,49 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Request, Response } from "express";
 import type { RedisLimit } from "../limiter";
-import type { MiddlewareOptions } from "../types";
+import type { MiddlewareOptionsInput } from "../types";
 import { buildRateLimitHeaders, setHeaders } from "../utils/headers";
+import { consumeRateLimit } from "../utils/metrics";
 
 const DEFAULT_KEY = (req: Request): string => req.ip ?? "unknown";
 
 export const RATE_LIMIT_KEY = "limitly:rate-limit";
 
-export const RateLimit = (options: MiddlewareOptions) =>
+export const RateLimit = (options: MiddlewareOptionsInput) =>
   SetMetadata(RATE_LIMIT_KEY, options);
 
-export type NestRateLimitOptions = MiddlewareOptions & {
+export type NestRateLimitOptions = MiddlewareOptionsInput & {
   limiter: RedisLimit;
   global?: boolean;
 };
 
 export function createNestGuard(limiter: RedisLimit) {
-  return function guard(defaultOptions?: MiddlewareOptions): Type<CanActivate> {
+  return function guard(
+    defaultOptions?: MiddlewareOptionsInput
+  ): Type<CanActivate> {
     @Injectable()
     class NestGuard implements CanActivate {
       constructor(private readonly reflector: Reflector) {}
 
       async canActivate(context: ExecutionContext): Promise<boolean> {
-        const options =
-          this.reflector.getAllAndOverride<MiddlewareOptions>(RATE_LIMIT_KEY, [
-            context.getHandler(),
-            context.getClass(),
-          ]) ?? defaultOptions;
+        const metadata = this.reflector.getAllAndOverride<MiddlewareOptionsInput>(
+          RATE_LIMIT_KEY,
+          [context.getHandler(), context.getClass()]
+        );
 
-        if (!options) {
+        const shouldApply =
+          metadata !== undefined ||
+          defaultOptions !== undefined ||
+          Object.keys(limiter.getDefaultOptions()).length > 0;
+
+        if (!shouldApply) {
           return true;
         }
+
+        const options = limiter.resolveOptions({
+          ...defaultOptions,
+          ...metadata,
+        });
 
         const strategy = limiter.createStrategy(options);
         const http = context.switchToHttp();
@@ -57,10 +69,16 @@ export function createNestGuard(limiter: RedisLimit) {
         const sendHeaders = options.headers !== false;
         const failOpen = options.failOpen ?? true;
 
-        let result;
-        try {
-          result = await strategy.consume(key);
-        } catch {
+        const outcome = await consumeRateLimit({
+          strategy,
+          key,
+          options,
+          failOpen,
+          storeType: limiter.getStoreType(),
+          context: context,
+        });
+
+        if (outcome.status === "error") {
           if (failOpen) {
             return true;
           }
@@ -68,6 +86,8 @@ export function createNestGuard(limiter: RedisLimit) {
             error: "Service Unavailable",
           });
         }
+
+        const result = outcome.result;
 
         if (sendHeaders) {
           setHeaders(response, buildRateLimitHeaders(result));

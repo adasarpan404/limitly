@@ -1,7 +1,7 @@
 import type { Context, Next } from "koa";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { RedisLimit } from "../src/limiter";
 import { createKoaMiddleware } from "../src/middleware/koa";
+import { createMockLimiter } from "./helpers/mock-limiter";
 
 function createMockContext(overrides?: { ip?: string }): Context {
   const headers = new Map<string, string>();
@@ -20,15 +20,12 @@ function createMockContext(overrides?: { ip?: string }): Context {
 }
 
 describe("createKoaMiddleware", () => {
-  let limiter: RedisLimit;
+  let limiter: ReturnType<typeof createMockLimiter>["limiter"];
   let consume: ReturnType<typeof vi.fn>;
   let next: Next;
 
   beforeEach(() => {
-    consume = vi.fn();
-    limiter = {
-      createStrategy: vi.fn(() => ({ consume })),
-    } as unknown as RedisLimit;
+    ({ limiter, consume } = createMockLimiter());
     next = vi.fn();
   });
 

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders, setHeaders } from "../utils/headers";
+import { consumeRateLimit } from "../utils/metrics";
 
 const DEFAULT_KEY = (req: Request): string => req.ip ?? "unknown";
 
@@ -20,17 +21,24 @@ export function createExpressMiddleware(limiter: RedisLimit) {
       next: NextFunction
     ): Promise<void> => {
       const key = keyExtractor(req) ?? "unknown";
+      const outcome = await consumeRateLimit({
+        strategy,
+        key,
+        options,
+        failOpen,
+        storeType: limiter.getStoreType(),
+        context: req,
+      });
 
-      let result;
-      try {
-        result = await strategy.consume(key);
-      } catch {
+      if (outcome.status === "error") {
         if (failOpen) {
           return next();
         }
         res.status(503).json({ error: "Service Unavailable" });
         return;
       }
+
+      const result = outcome.result;
 
       if (sendHeaders) {
         setHeaders(res, buildRateLimitHeaders(result));

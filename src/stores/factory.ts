@@ -1,6 +1,6 @@
 import type { RedisLimitOptions } from "../types";
 import { createMemcachedClient } from "../utils/memcached";
-import { createRedisClient } from "../utils/redis";
+import { createRedisClient, DEFAULT_KEY_PREFIX } from "../utils/redis";
 import { MemcachedStore } from "./memcached-store";
 import { RedisStore } from "./redis-store";
 import type { RateLimitStore, StoreType } from "./types";
@@ -19,7 +19,7 @@ export function resolveStoreType(options: RedisLimitOptions): StoreType {
 
 export function createStore(options: RedisLimitOptions): RateLimitStore {
   const storeType = resolveStoreType(options);
-  const keyPrefix = options.keyPrefix ?? "redislimit";
+  const keyPrefix = options.keyPrefix ?? DEFAULT_KEY_PREFIX;
 
   if (storeType === "memcached") {
     if (!options.memcached) {

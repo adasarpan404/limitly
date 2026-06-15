@@ -1,6 +1,8 @@
 import Redis, { Cluster, type RedisOptions } from "ioredis";
 import type { RedisClient, RedisConfig } from "../types";
 
+export const DEFAULT_KEY_PREFIX = "limitly";
+
 export function createRedisClient(config: RedisConfig): RedisClient {
   if (isRedisClient(config)) {
     return config;

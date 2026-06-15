@@ -10,6 +10,7 @@ import {
   createNestGuard,
   RATE_LIMIT_KEY,
 } from "../../src/middleware/nest";
+import { resolveMiddlewareOptions } from "../../src/utils/defaults";
 
 function createMockContext(overrides?: {
   ip?: string;
@@ -40,6 +41,9 @@ describe("createNestGuard", () => {
   beforeEach(() => {
     consume = vi.fn();
     limiter = {
+      getDefaultOptions: vi.fn(() => ({})),
+      getStoreType: vi.fn(() => "redis" as const),
+      resolveOptions: vi.fn((options = {}) => resolveMiddlewareOptions(options)),
       createStrategy: vi.fn(() => ({ consume })),
     } as unknown as RedisLimit;
 
@@ -63,6 +67,22 @@ describe("createNestGuard", () => {
 
     const result = await unconfiguredGuard.canActivate(createMockContext());
     expect(result).toBe(true);
+  });
+
+  it("uses default algorithm when guard factory receives empty options", async () => {
+    const DefaultGuard = createNestGuard(limiter)({});
+    const guardWithDefaults = new DefaultGuard(reflector);
+
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue(undefined);
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    await guardWithDefaults.canActivate(createMockContext());
+    expect(consume).toHaveBeenCalledWith("127.0.0.1");
   });
 
   it("allows request under the limit", async () => {

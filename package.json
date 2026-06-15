@@ -45,6 +45,11 @@
       "types": "./dist/middleware/koa.d.ts",
       "import": "./dist/middleware/koa.js",
       "require": "./dist/middleware/koa.js"
+    },
+    "./bun": {
+      "types": "./dist/middleware/bun.d.ts",
+      "import": "./dist/middleware/bun.js",
+      "require": "./dist/middleware/bun.js"
     }
   },
   "files": [
@@ -72,6 +77,7 @@
     "fastify",
     "hono",
     "koa",
+    "bun",
     "nestjs",
     "nest",
     "sliding-window",

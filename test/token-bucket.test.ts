@@ -3,7 +3,7 @@ import { TokenBucketStrategy } from "../src/algorithms/token-bucket";
 import { RedisStore } from "../src/stores/redis-store";
 import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
 
-const TEST_PREFIX = "redislimit:test:tb";
+const TEST_PREFIX = "limitly:test:tb";
 
 describe("TokenBucketStrategy", () => {
   const redisPromise = getTestRedis();

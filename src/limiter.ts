@@ -2,18 +2,25 @@ import { createStrategy } from "./algorithms/factory";
 import { createExpressMiddleware } from "./middleware/express";
 import { createFastifyPlugin } from "./middleware/fastify";
 import { createHonoMiddleware } from "./middleware/hono";
+import { createBunMiddleware } from "./middleware/bun";
 import { createKoaMiddleware } from "./middleware/koa";
 import { createNestGuard } from "./middleware/nest";
 import { createStore } from "./stores/factory";
 import type { RateLimitStore } from "./stores/types";
 import type { RedisStore } from "./stores/redis-store";
 import type { MemcachedStore } from "./stores/memcached-store";
+import {
+  resolveAlgorithmConfig,
+  resolveMiddlewareOptions,
+} from "./utils/defaults";
+import { consumeRateLimit } from "./utils/metrics";
 import type { FastifyPluginAsync } from "fastify";
 import type { CanActivate, Type } from "@nestjs/common";
 import type {
   AlgorithmConfig,
   MemcachedClient,
   MiddlewareOptions,
+  MiddlewareOptionsInput,
   RateLimitResult,
   RateLimitStrategy,
   RedisClient,
@@ -23,10 +30,15 @@ import type {
 export class RedisLimit {
   private readonly store: RateLimitStore;
   private readonly failOpen: boolean;
+  private readonly defaultOptions: MiddlewareOptionsInput;
 
   constructor(options: RedisLimitOptions) {
     this.store = createStore(options);
     this.failOpen = options.failOpen ?? true;
+    this.defaultOptions = {
+      onMetrics: options.onMetrics,
+      ...options.default,
+    };
   }
 
   getStore(): RateLimitStore {
@@ -35,6 +47,14 @@ export class RedisLimit {
 
   getStoreType(): RateLimitStore["type"] {
     return this.store.type;
+  }
+
+  getDefaultOptions(): MiddlewareOptionsInput {
+    return this.defaultOptions;
+  }
+
+  resolveOptions(options: MiddlewareOptionsInput = {}): MiddlewareOptions {
+    return resolveMiddlewareOptions(options, this.defaultOptions);
   }
 
   getRedis(): RedisClient {
@@ -59,41 +79,62 @@ export class RedisLimit {
     return createStrategy(this.store, config);
   }
 
+  createStrategyFromOptions(
+    options: MiddlewareOptionsInput = {}
+  ): RateLimitStrategy {
+    return createStrategy(
+      this.store,
+      resolveAlgorithmConfig(options, this.defaultOptions)
+    );
+  }
+
   async check(
     key: string,
-    config: AlgorithmConfig,
+    config: MiddlewareOptionsInput = {},
     options?: { failOpen?: boolean }
   ): Promise<RateLimitResult> {
-    const strategy = this.createStrategy(config);
+    const resolved = this.resolveOptions(config);
+    const strategy = this.createStrategy(resolved);
     const shouldFailOpen = options?.failOpen ?? this.failOpen;
+    const outcome = await consumeRateLimit({
+      strategy,
+      key,
+      options: resolved,
+      failOpen: shouldFailOpen,
+      storeType: this.store.type,
+    });
 
-    try {
-      return await strategy.consume(key);
-    } catch (error) {
+    if (outcome.status === "error") {
       if (shouldFailOpen) {
-        return this.createFailOpenResult(config);
+        return this.createFailOpenResult(resolved);
       }
-      throw error;
+      throw outcome.error;
     }
+
+    return outcome.result;
   }
 
-  middleware(options: MiddlewareOptions) {
-    return createExpressMiddleware(this)(options);
+  middleware(options: MiddlewareOptionsInput = {}) {
+    return createExpressMiddleware(this)(this.resolveOptions(options));
   }
 
-  honoMiddleware(options: MiddlewareOptions) {
-    return createHonoMiddleware(this)(options);
+  honoMiddleware(options: MiddlewareOptionsInput = {}) {
+    return createHonoMiddleware(this)(this.resolveOptions(options));
   }
 
-  koaMiddleware(options: MiddlewareOptions) {
-    return createKoaMiddleware(this)(options);
+  koaMiddleware(options: MiddlewareOptionsInput = {}) {
+    return createKoaMiddleware(this)(this.resolveOptions(options));
   }
 
-  get fastifyPlugin(): FastifyPluginAsync<MiddlewareOptions> {
+  bunMiddleware(options: MiddlewareOptionsInput = {}) {
+    return createBunMiddleware(this)(this.resolveOptions(options));
+  }
+
+  get fastifyPlugin(): FastifyPluginAsync<MiddlewareOptionsInput> {
     return createFastifyPlugin(this);
   }
 
-  nestGuard(defaultOptions?: MiddlewareOptions): Type<CanActivate> {
+  nestGuard(defaultOptions: MiddlewareOptionsInput = {}): Type<CanActivate> {
     return createNestGuard(this)(defaultOptions);
   }
 
@@ -114,4 +155,4 @@ export function createLimiter(options: RedisLimitOptions): RedisLimit {
   return new RedisLimit(options);
 }
 
-export type { MiddlewareOptions };
+export type { MiddlewareOptions, MiddlewareOptionsInput };

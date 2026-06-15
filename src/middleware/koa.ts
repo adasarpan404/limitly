@@ -2,6 +2,7 @@ import type { Context, Next } from "koa";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
+import { consumeRateLimit } from "../utils/metrics";
 
 const DEFAULT_KEY = (ctx: Context): string => ctx.ip ?? "unknown";
 
@@ -27,11 +28,16 @@ export function createKoaMiddleware(limiter: RedisLimit) {
 
     return async (ctx: Context, next: Next): Promise<void> => {
       const key = keyExtractor(ctx) ?? "unknown";
+      const outcome = await consumeRateLimit({
+        strategy,
+        key,
+        options,
+        failOpen,
+        storeType: limiter.getStoreType(),
+        context: ctx,
+      });
 
-      let result;
-      try {
-        result = await strategy.consume(key);
-      } catch {
+      if (outcome.status === "error") {
         if (failOpen) {
           return next();
         }
@@ -39,6 +45,8 @@ export function createKoaMiddleware(limiter: RedisLimit) {
         ctx.body = { error: "Service Unavailable" };
         return;
       }
+
+      const result = outcome.result;
 
       if (sendHeaders) {
         setKoaHeaders(ctx, buildRateLimitHeaders(result));

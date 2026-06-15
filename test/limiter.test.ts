@@ -68,6 +68,23 @@ describe("RedisLimit", () => {
     expect(result.limit).toBe(100);
   });
 
+  it("uses limitly as default keyPrefix", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ redis });
+    const strategy = limiter.createStrategy({
+      algorithm: "sliding-window",
+      limit: 10,
+      window: 60,
+    });
+
+    await strategy.consume("user-default");
+    const keys = await redis.keys("limitly:sw:*");
+    expect(keys.some((key) => key.endsWith("user-default"))).toBe(true);
+    await redis.del(...keys);
+  });
+
   it("uses custom keyPrefix", async () => {
     const redis = await redisPromise;
     if (!redis) return;
@@ -83,6 +100,38 @@ describe("RedisLimit", () => {
     const keys = await redis.keys("custom:*");
     expect(keys.length).toBeGreaterThan(0);
     await redis.del(...keys);
+  });
+
+  it("uses default algorithm when check config is omitted", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({
+      redis,
+      keyPrefix: "limitly:test:default-algo",
+    });
+
+    const result = await limiter.check("default-algo-user");
+    expect(result.allowed).toBe(true);
+    expect(result.limit).toBe(100);
+
+    await redis.del("limitly:test:default-algo:sw:default-algo-user");
+  });
+
+  it("applies limiter default config to middleware", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({
+      redis,
+      keyPrefix: "limitly:test:middleware-default",
+      default: { limit: 3, window: 60 },
+    });
+
+    const strategy = limiter.createStrategyFromOptions();
+    const first = await strategy.consume("mw-user");
+    expect(first.limit).toBe(3);
+    await redis.del("limitly:test:middleware-default:sw:mw-user");
   });
 
   it("check works with token-bucket algorithm", async () => {
@@ -122,6 +171,7 @@ describe("RedisLimit", () => {
     expect(typeof limiter.middleware).toBe("function");
     expect(typeof limiter.honoMiddleware).toBe("function");
     expect(typeof limiter.koaMiddleware).toBe("function");
+    expect(typeof limiter.bunMiddleware).toBe("function");
     expect(limiter.fastifyPlugin).toBeDefined();
     expect(typeof limiter.nestGuard).toBe("function");
   });

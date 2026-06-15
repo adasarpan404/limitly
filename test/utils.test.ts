@@ -1,11 +1,22 @@
 import Redis from "ioredis";
 import { describe, it, expect } from "vitest";
 import { resolveStoreType } from "../src/stores/factory";
-import { buildKey, createRedisClient } from "../src/utils/redis";
+import {
+  buildKey,
+  createRedisClient,
+  DEFAULT_KEY_PREFIX,
+} from "../src/utils/redis";
 
 describe("buildKey", () => {
   it("joins prefix and key", () => {
     expect(buildKey("limitly", "user:123")).toBe("limitly:user:123");
+  });
+
+  it("uses limitly as the default key prefix constant", () => {
+    expect(DEFAULT_KEY_PREFIX).toBe("limitly");
+    expect(buildKey(DEFAULT_KEY_PREFIX, "sw:api-key-1")).toBe(
+      "limitly:sw:api-key-1"
+    );
   });
 });
 

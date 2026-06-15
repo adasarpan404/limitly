@@ -1,11 +1,12 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { RedisLimit } from "../limiter";
-import type { MiddlewareOptions } from "../types";
+import type { MiddlewareOptions, MiddlewareOptionsInput } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
+import { consumeRateLimit } from "../utils/metrics";
 
 const DEFAULT_KEY = (req: FastifyRequest): string => req.ip;
 
-export type FastifyRateLimitOptions = MiddlewareOptions & {
+export type FastifyRateLimitOptions = MiddlewareOptionsInput & {
   limiter: RedisLimit;
 };
 
@@ -20,22 +21,33 @@ function setFastifyHeaders(
   }
 }
 
-export function createFastifyPlugin(limiter: RedisLimit): FastifyPluginAsync<MiddlewareOptions> {
-  const plugin: FastifyPluginAsync<MiddlewareOptions> = async (fastify, options) => {
-    const strategy = limiter.createStrategy(options);
-    const keyExtractor = (options.key ?? DEFAULT_KEY) as (
+export function createFastifyPlugin(
+  limiter: RedisLimit
+): FastifyPluginAsync<MiddlewareOptionsInput> {
+  const plugin: FastifyPluginAsync<MiddlewareOptionsInput> = async (
+    fastify,
+    options
+  ) => {
+    const resolved = limiter.resolveOptions(options);
+    const strategy = limiter.createStrategy(resolved);
+    const keyExtractor = (resolved.key ?? DEFAULT_KEY) as (
       req: FastifyRequest
     ) => string | undefined;
-    const sendHeaders = options.headers !== false;
-    const failOpen = options.failOpen ?? true;
+    const sendHeaders = resolved.headers !== false;
+    const failOpen = resolved.failOpen ?? true;
 
     fastify.addHook("preHandler", async (request, reply) => {
       const key = keyExtractor(request) ?? "unknown";
+      const outcome = await consumeRateLimit({
+        strategy,
+        key,
+        options: resolved,
+        failOpen,
+        storeType: limiter.getStoreType(),
+        context: request,
+      });
 
-      let result;
-      try {
-        result = await strategy.consume(key);
-      } catch {
+      if (outcome.status === "error") {
         if (failOpen) {
           return;
         }
@@ -43,13 +55,15 @@ export function createFastifyPlugin(limiter: RedisLimit): FastifyPluginAsync<Mid
         return;
       }
 
+      const result = outcome.result;
+
       if (sendHeaders) {
         setFastifyHeaders(reply, buildRateLimitHeaders(result));
       }
 
       if (!result.allowed) {
-        if (options.onLimitReached) {
-          await options.onLimitReached(request, reply);
+        if (resolved.onLimitReached) {
+          await resolved.onLimitReached(request, reply);
           return;
         }
 
@@ -66,6 +80,5 @@ export const redisLimitPlugin: FastifyPluginAsync<FastifyRateLimitOptions> = asy
   options
 ) => {
   const { limiter, ...rest } = options;
-  const middlewareOptions = rest as MiddlewareOptions;
-  await fastify.register(createFastifyPlugin(limiter), middlewareOptions);
+  await fastify.register(createFastifyPlugin(limiter), rest);
 };
