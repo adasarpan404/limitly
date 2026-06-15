@@ -1,16 +1,16 @@
 {
   "name": "limitly",
   "version": "1.0.1",
-  "description": "Distributed, Redis-powered rate limiting for Express and Fastify",
+  "description": "Express-rate-limit, but distributed, Redis-powered, and production ready.",
   "author": "Arpan Das <dasarpan471@gmail.com>",
   "license": "MIT",
-  "homepage": "https://github.com/arpandas/redislimit#readme",
+  "homepage": "https://github.com/arpandas/limitly#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arpandas/redislimit.git"
+    "url": "git+https://github.com/arpandas/limitly.git"
   },
   "bugs": {
-    "url": "https://github.com/arpandas/redislimit/issues"
+    "url": "https://github.com/arpandas/limitly/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -49,6 +49,7 @@
     "version:major": "npm version major"
   },
   "keywords": [
+    "limitly",
     "rate-limit",
     "rate-limiting",
     "redis",
