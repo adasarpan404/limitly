@@ -1,6 +1,6 @@
 {
   "name": "redislimit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Distributed, Redis-powered rate limiting for Express and Fastify",
   "author": "Arpan Das <dasarpan471@gmail.com>",
   "license": "MIT",
