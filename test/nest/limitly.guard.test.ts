@@ -1,4 +1,8 @@
-import { ExecutionContext, HttpException } from "@nestjs/common";
+import {
+  ExecutionContext,
+  HttpException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RedisLimit } from "../../src/limiter";
@@ -150,5 +154,87 @@ describe("createNestGuard", () => {
       handler,
       clazz,
     ]);
+  });
+
+  it("uses default options from guard factory when metadata is absent", async () => {
+    const DefaultGuard = createNestGuard(limiter)({
+      algorithm: "sliding-window",
+      limit: 50,
+      window: 30,
+    });
+    const defaultGuard = new DefaultGuard(reflector);
+
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue(undefined);
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 50,
+      remaining: 49,
+      reset: 1710000000,
+    });
+
+    await defaultGuard.canActivate(createMockContext());
+    expect(consume).toHaveBeenCalledWith("127.0.0.1");
+  });
+
+  it("throws ServiceUnavailableException when failOpen is false", async () => {
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      failOpen: false,
+    });
+    consume.mockRejectedValue(new Error("store down"));
+
+    await expect(guard.canActivate(createMockContext())).rejects.toThrow(
+      ServiceUnavailableException
+    );
+  });
+
+  it("skips headers when headers: false", async () => {
+    const setHeader = vi.fn();
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ ip: "127.0.0.1", headers: {} }),
+        getResponse: () => ({ setHeader }),
+      }),
+      getHandler: () => vi.fn(),
+      getClass: () => vi.fn(),
+    } as unknown as ExecutionContext;
+
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      headers: false,
+    });
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    await guard.canActivate(context);
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it("calls onLimitReached when rate limited", async () => {
+    const onLimitReached = vi.fn();
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+      onLimitReached,
+    });
+    consume.mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+    });
+
+    const result = await guard.canActivate(createMockContext());
+    expect(onLimitReached).toHaveBeenCalled();
+    expect(result).toBe(false);
   });
 });

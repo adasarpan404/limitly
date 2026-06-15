@@ -62,4 +62,26 @@ describe("createStore", () => {
       'Redis configuration is required'
     );
   });
+
+  it("throws when valkey store has no redis config", () => {
+    expect(() => createStore({ store: "valkey" })).toThrow(
+      'Redis configuration is required'
+    );
+  });
+
+  it("creates RedisStore with default redis type", () => {
+    const store = createStore({ redis: "redis://localhost:6379" });
+    expect(store).toBeInstanceOf(RedisStore);
+    expect(store.type).toBe("redis");
+  });
+
+  it("explicit store type overrides auto-detection", () => {
+    expect(
+      resolveStoreType({
+        store: "dragonfly",
+        redis: "redis://localhost",
+        memcached: "localhost:11211",
+      })
+    ).toBe("dragonfly");
+  });
 });

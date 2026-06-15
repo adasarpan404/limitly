@@ -121,6 +121,46 @@ describe("MemcachedStore", () => {
     expect(blocked.retryAfter).toBeGreaterThan(0);
   });
 
+  it("returns retryAfter when sliding window is exceeded", async () => {
+    for (let i = 0; i < 3; i++) {
+      await store.slidingWindow("retry-user", 3, 60);
+    }
+
+    const blocked = await store.slidingWindow("retry-user", 3, 60);
+    expect(blocked.retryAfter).toBeGreaterThan(0);
+    expect(blocked.reset).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it("isolates token bucket keys", async () => {
+    for (let i = 0; i < 2; i++) {
+      await store.tokenBucket("tb-a", 2, 1);
+    }
+
+    const blockedA = await store.tokenBucket("tb-a", 2, 1);
+    const allowedB = await store.tokenBucket("tb-b", 2, 1);
+
+    expect(blockedA.allowed).toBe(false);
+    expect(allowedB.allowed).toBe(true);
+  });
+
+  it("refills token bucket tokens over time", async () => {
+    vi.useFakeTimers();
+
+    for (let i = 0; i < 2; i++) {
+      await store.tokenBucket("refill", 2, 10);
+    }
+
+    let blocked = await store.tokenBucket("refill", 2, 10);
+    expect(blocked.allowed).toBe(false);
+
+    vi.advanceTimersByTime(200);
+
+    const allowed = await store.tokenBucket("refill", 2, 10);
+    expect(allowed.allowed).toBe(true);
+
+    vi.useRealTimers();
+  });
+
   it("isolates sliding window keys", async () => {
     for (let i = 0; i < 2; i++) {
       await store.slidingWindow("user-a", 2, 60);

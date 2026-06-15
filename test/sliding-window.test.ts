@@ -86,4 +86,23 @@ describe("SlidingWindowStrategy", () => {
     expect(blockedA.allowed).toBe(false);
     expect(allowedB.allowed).toBe(true);
   });
+
+  it("returns reset timestamp in the future when blocked", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new SlidingWindowStrategy(store, {
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+    });
+
+    await strategy.consume("reset-user");
+    const blocked = await strategy.consume("reset-user");
+
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reset).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000));
+    expect(blocked.retryAfter).toBeGreaterThan(0);
+  });
 });

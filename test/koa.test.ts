@@ -135,6 +135,73 @@ describe("createKoaMiddleware", () => {
     expect(next).toHaveBeenCalled();
   });
 
+  it("skips headers when headers: false", async () => {
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    const middleware = createKoaMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      headers: false,
+    });
+
+    const ctx = createMockContext({ ip: "127.0.0.1" });
+    await middleware(ctx, next);
+
+    const context = ctx as Context & { _headers: Map<string, string> };
+    expect(context._headers.size).toBe(0);
+  });
+
+  it("calls onLimitReached when rate limited", async () => {
+    consume.mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+    });
+
+    const onLimitReached = vi.fn();
+    const middleware = createKoaMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+      onLimitReached,
+    });
+
+    const ctx = createMockContext();
+    await middleware(ctx, next);
+
+    expect(onLimitReached).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("sets Retry-After header when rate limited", async () => {
+    consume.mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+      retryAfter: 20,
+    });
+
+    const middleware = createKoaMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+    });
+
+    const ctx = createMockContext();
+    await middleware(ctx, next);
+
+    const context = ctx as Context & { _headers: Map<string, string> };
+    expect(context._headers.get("Retry-After")).toBe("20");
+  });
+
   it("returns 503 when failOpen is false and Redis fails", async () => {
     consume.mockRejectedValue(new Error("Redis down"));
 

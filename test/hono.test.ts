@@ -153,6 +153,71 @@ describe("createHonoMiddleware", () => {
     expect(next).toHaveBeenCalled();
   });
 
+  it("uses x-real-ip when x-forwarded-for is absent", async () => {
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    const middleware = createHonoMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+    });
+
+    const c = createMockContext({ headers: { "x-real-ip": "198.51.100.1" } });
+    await middleware(c, next);
+
+    expect(consume).toHaveBeenCalledWith("198.51.100.1");
+  });
+
+  it("skips headers when headers: false", async () => {
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    const middleware = createHonoMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      headers: false,
+    });
+
+    const c = createMockContext();
+    await middleware(c, next);
+
+    const ctx = c as Context & { _responseHeaders: Map<string, string> };
+    expect(ctx._responseHeaders.size).toBe(0);
+  });
+
+  it("calls onLimitReached when rate limited", async () => {
+    consume.mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+    });
+
+    const onLimitReached = vi.fn();
+    const middleware = createHonoMiddleware(limiter)({
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+      onLimitReached,
+    });
+
+    const c = createMockContext();
+    await middleware(c, next);
+
+    expect(onLimitReached).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("returns 503 when failOpen is false and Redis fails", async () => {
     consume.mockRejectedValue(new Error("Redis down"));
 

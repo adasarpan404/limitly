@@ -1,3 +1,4 @@
+import Memcached from "memcached";
 import { describe, it, expect, afterAll } from "vitest";
 import { RedisLimit, createLimiter } from "../src/limiter";
 import { cleanupRedis, getTestRedis } from "./setup";
@@ -65,6 +66,64 @@ describe("RedisLimit", () => {
 
     expect(result.allowed).toBe(true);
     expect(result.limit).toBe(100);
+  });
+
+  it("uses custom keyPrefix", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ redis, keyPrefix: "custom" });
+    const strategy = limiter.createStrategy({
+      algorithm: "sliding-window",
+      limit: 10,
+      window: 60,
+    });
+
+    await strategy.consume("user-1");
+    const keys = await redis.keys("custom:*");
+    expect(keys.length).toBeGreaterThan(0);
+    await redis.del(...keys);
+  });
+
+  it("check works with token-bucket algorithm", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ redis, keyPrefix: "limitly:test:check" });
+    const result = await limiter.check("tb-key", {
+      algorithm: "token-bucket",
+      capacity: 5,
+      refillRate: 1,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.limit).toBe(5);
+    await redis.del("limitly:test:check:tb:tb-key");
+  });
+
+  it("getRedis throws when using memcached store", () => {
+    const client = { get: () => {}, incr: () => {} } as unknown as Memcached;
+    const limiter = createLimiter({ store: "memcached", memcached: client });
+    expect(() => limiter.getRedis()).toThrow('getRedis() is not available');
+  });
+
+  it("getMemcached returns client for memcached store", () => {
+    const client = new Memcached("localhost:11211");
+    const limiter = createLimiter({ memcached: client });
+    expect(limiter.getMemcached()).toBe(client);
+    expect(limiter.getStoreType()).toBe("memcached");
+  });
+
+  it("exposes middleware factory methods", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ redis });
+    expect(typeof limiter.middleware).toBe("function");
+    expect(typeof limiter.honoMiddleware).toBe("function");
+    expect(typeof limiter.koaMiddleware).toBe("function");
+    expect(limiter.fastifyPlugin).toBeDefined();
+    expect(typeof limiter.nestGuard).toBe("function");
   });
 
   it("failClosed throws on Redis error", async () => {
