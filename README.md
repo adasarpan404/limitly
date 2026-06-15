@@ -1,6 +1,6 @@
 # limitly
 
-Distributed, Redis-powered rate limiting for Express and Fastify.
+Distributed, Redis-powered rate limiting for Express, Fastify, Hono, Koa, and NestJS.
 
 > Express-rate-limit, but distributed, Redis-powered, and production ready.
 
@@ -8,6 +8,9 @@ Distributed, Redis-powered rate limiting for Express and Fastify.
 
 ```bash
 npm install limitly ioredis
+
+# NestJS
+npm install limitly ioredis @nestjs/common @nestjs/core
 ```
 
 ## Quick Start
@@ -51,11 +54,110 @@ await fastify.register(limiter.fastifyPlugin, {
 });
 ```
 
+### Hono
+
+```typescript
+import { Hono } from "hono";
+import Redis from "ioredis";
+import { createLimiter } from "limitly";
+
+const app = new Hono();
+const limiter = createLimiter({ redis: new Redis() });
+
+app.use(
+  "*",
+  limiter.honoMiddleware({
+    algorithm: "sliding-window",
+    limit: 100,
+    window: 60,
+    key: (c) => c.req.header("x-api-key"),
+  })
+);
+```
+
+### Koa
+
+```typescript
+import Koa from "koa";
+import Redis from "ioredis";
+import { createLimiter } from "limitly";
+
+const app = new Koa();
+const limiter = createLimiter({ redis: new Redis() });
+
+app.use(
+  limiter.koaMiddleware({
+    algorithm: "sliding-window",
+    limit: 100,
+    window: 60,
+    key: (ctx) => ctx.ip,
+  })
+);
+```
+
+### NestJS
+
+```typescript
+import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import Redis from "ioredis";
+import { createLimiter } from "limitly";
+import { RateLimit } from "limitly/nest";
+
+const limiter = createLimiter({ redis: new Redis() });
+const NestGuard = limiter.nestGuard({
+  algorithm: "sliding-window",
+  limit: 100,
+  window: 60,
+  key: (req) => req.ip,
+});
+
+@Module({
+  providers: [{ provide: APP_GUARD, useClass: NestGuard }],
+})
+export class AppModule {}
+```
+
+Per-route limits with `@RateLimit()`:
+
+```typescript
+import { Controller, Get } from "@nestjs/common";
+import { RateLimit } from "limitly/nest";
+
+@Controller("api")
+export class ApiController {
+  @Get()
+  @RateLimit({ algorithm: "sliding-window", limit: 10, window: 60 })
+  findAll() {
+    return { ok: true };
+  }
+}
+```
+
+Module helper (like `redisLimitPlugin` for Fastify):
+
+```typescript
+import { limitlyNestModule } from "limitly/nest";
+
+@Module({
+  imports: [
+    limitlyNestModule({
+      limiter,
+      algorithm: "token-bucket",
+      capacity: 50,
+      refillRate: 10,
+      global: true,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
 ## Algorithms
 
 ### Sliding Window
 
-Uses Redis Sorted Sets for precise rate limiting over a rolling time window.
+Uses Redis Sorted Sets (or Memcached counters) for rate limiting over a rolling time window.
 
 ```typescript
 limiter.middleware({
@@ -77,27 +179,51 @@ limiter.middleware({
 });
 ```
 
-## Redis Connection
+## Storage Backends
 
-Supports multiple connection modes:
+limitly supports Redis, Valkey, DragonflyDB (Redis-compatible), and Memcached.
+
+### Redis / Valkey / DragonflyDB
+
+Redis-compatible backends use atomic Lua scripts (sorted sets + hashes). Connect with `ioredis`:
 
 ```typescript
-// Existing Redis instance
+import Redis from "ioredis";
+
+// Redis
 createLimiter({ redis: new Redis() });
 
-// Connection URL
-createLimiter({ redis: "redis://localhost:6379" });
+// Valkey
+createLimiter({ store: "valkey", redis: "redis://localhost:6379" });
 
-// Options object
-createLimiter({ redis: { host: "localhost", port: 6379 } });
+// DragonflyDB
+createLimiter({ store: "dragonfly", redis: { host: "localhost", port: 6379 } });
 
 // Cluster
 createLimiter({
-  redis: {
-    nodes: [{ host: "127.0.0.1", port: 7000 }],
-  },
+  store: "redis",
+  redis: { nodes: [{ host: "127.0.0.1", port: 7000 }] },
 });
 ```
+
+### Memcached
+
+Memcached uses counter-based sliding window and CAS token bucket (no Lua required):
+
+```typescript
+import Memcached from "memcached";
+
+createLimiter({
+  store: "memcached",
+  memcached: "localhost:11211",
+});
+
+// Or pass an existing client
+createLimiter({ memcached: new Memcached(["localhost:11211"]) });
+```
+
+> Memcached sliding window uses a weighted two-window counter (high accuracy, no sorted sets).
+> Token bucket uses `gets`/`cas` for atomic updates.
 
 ## Key Extraction
 

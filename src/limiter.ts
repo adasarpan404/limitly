@@ -1,34 +1,62 @@
 import { createStrategy } from "./algorithms/factory";
 import { createExpressMiddleware } from "./middleware/express";
 import { createFastifyPlugin } from "./middleware/fastify";
+import { createHonoMiddleware } from "./middleware/hono";
+import { createKoaMiddleware } from "./middleware/koa";
+import { createNestGuard } from "./middleware/nest";
+import { createStore } from "./stores/factory";
+import type { RateLimitStore } from "./stores/types";
+import type { RedisStore } from "./stores/redis-store";
+import type { MemcachedStore } from "./stores/memcached-store";
 import type { FastifyPluginAsync } from "fastify";
+import type { CanActivate, Type } from "@nestjs/common";
 import type {
   AlgorithmConfig,
+  MemcachedClient,
   MiddlewareOptions,
   RateLimitResult,
   RateLimitStrategy,
   RedisClient,
   RedisLimitOptions,
 } from "./types";
-import { createRedisClient } from "./utils/redis";
 
 export class RedisLimit {
-  private readonly redis: RedisClient;
+  private readonly store: RateLimitStore;
   private readonly failOpen: boolean;
-  private readonly keyPrefix: string;
 
   constructor(options: RedisLimitOptions) {
-    this.redis = createRedisClient(options.redis);
+    this.store = createStore(options);
     this.failOpen = options.failOpen ?? true;
-    this.keyPrefix = options.keyPrefix ?? "redislimit";
+  }
+
+  getStore(): RateLimitStore {
+    return this.store;
+  }
+
+  getStoreType(): RateLimitStore["type"] {
+    return this.store.type;
   }
 
   getRedis(): RedisClient {
-    return this.redis;
+    if (this.store.type === "memcached") {
+      throw new Error(
+        `getRedis() is not available when using the "${this.store.type}" store`
+      );
+    }
+    return (this.store as RedisStore).getClient();
+  }
+
+  getMemcached(): MemcachedClient {
+    if (this.store.type !== "memcached") {
+      throw new Error(
+        `getMemcached() is only available when using the "memcached" store`
+      );
+    }
+    return (this.store as MemcachedStore).getClient();
   }
 
   createStrategy(config: AlgorithmConfig): RateLimitStrategy {
-    return createStrategy(this.redis, config, this.keyPrefix);
+    return createStrategy(this.store, config);
   }
 
   async check(
@@ -53,8 +81,20 @@ export class RedisLimit {
     return createExpressMiddleware(this)(options);
   }
 
+  honoMiddleware(options: MiddlewareOptions) {
+    return createHonoMiddleware(this)(options);
+  }
+
+  koaMiddleware(options: MiddlewareOptions) {
+    return createKoaMiddleware(this)(options);
+  }
+
   get fastifyPlugin(): FastifyPluginAsync<MiddlewareOptions> {
     return createFastifyPlugin(this);
+  }
+
+  nestGuard(defaultOptions?: MiddlewareOptions): Type<CanActivate> {
+    return createNestGuard(this)(defaultOptions);
   }
 
   private createFailOpenResult(config: AlgorithmConfig): RateLimitResult {

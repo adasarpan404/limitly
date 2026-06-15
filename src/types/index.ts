@@ -1,4 +1,8 @@
 import type { Cluster, Redis, RedisOptions } from "ioredis";
+import type Memcached from "memcached";
+import type { StoreType } from "../stores/types";
+
+export type { StoreType };
 
 export type RedisClient = Redis | Cluster;
 
@@ -8,8 +12,23 @@ export type RedisConfig =
   | RedisOptions
   | { nodes: { host: string; port: number }[]; options?: RedisOptions };
 
+export type MemcachedClient = Memcached;
+
+export type MemcachedOptions = Memcached.options;
+
+export type MemcachedConfig =
+  | MemcachedClient
+  | string
+  | string[]
+  | { servers: string | string[]; options?: MemcachedOptions };
+
 export interface RedisLimitOptions {
-  redis: RedisConfig;
+  /** Storage backend. Defaults to "redis", or "memcached" when memcached config is provided. */
+  store?: StoreType;
+  /** Redis-compatible connection (Redis, Valkey, DragonflyDB) */
+  redis?: RedisConfig;
+  /** Memcached server(s) */
+  memcached?: MemcachedConfig;
   failOpen?: boolean;
   keyPrefix?: string;
 }

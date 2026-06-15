@@ -15,6 +15,24 @@ describe("RedisLimit", () => {
 
     const limiter = createLimiter({ redis });
     expect(limiter.getRedis()).toBe(redis);
+    expect(limiter.getStoreType()).toBe("redis");
+  });
+
+  it("creates limiter with valkey store", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ store: "valkey", redis });
+    expect(limiter.getStoreType()).toBe("valkey");
+    expect(limiter.getRedis()).toBeDefined();
+  });
+
+  it("creates limiter with dragonfly store", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const limiter = createLimiter({ store: "dragonfly", redis });
+    expect(limiter.getStoreType()).toBe("dragonfly");
   });
 
   it("creates limiter from connection URL", async () => {

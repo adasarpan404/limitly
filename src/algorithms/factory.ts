@@ -1,21 +1,17 @@
-import type {
-  AlgorithmConfig,
-  RateLimitStrategy,
-  RedisClient,
-} from "../types";
+import type { AlgorithmConfig, RateLimitStrategy } from "../types";
+import type { RateLimitStore } from "../stores/types";
 import { SlidingWindowStrategy } from "./sliding-window";
 import { TokenBucketStrategy } from "./token-bucket";
 
 export function createStrategy(
-  redis: RedisClient,
-  config: AlgorithmConfig,
-  keyPrefix?: string
+  store: RateLimitStore,
+  config: AlgorithmConfig
 ): RateLimitStrategy {
   switch (config.algorithm) {
     case "sliding-window":
-      return new SlidingWindowStrategy(redis, config, keyPrefix);
+      return new SlidingWindowStrategy(store, config);
     case "token-bucket":
-      return new TokenBucketStrategy(redis, config, keyPrefix);
+      return new TokenBucketStrategy(store, config);
     default: {
       const exhaustive: never = config;
       throw new Error(

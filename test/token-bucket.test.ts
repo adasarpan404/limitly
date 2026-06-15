@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { TokenBucketStrategy } from "../src/algorithms/token-bucket";
+import { RedisStore } from "../src/stores/redis-store";
 import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
 
 const TEST_PREFIX = "redislimit:test:tb";
@@ -22,11 +23,12 @@ describe("TokenBucketStrategy", () => {
     const redis = await redisPromise;
     if (!redis) return;
 
-    const strategy = new TokenBucketStrategy(
-      redis,
-      { algorithm: "token-bucket", capacity: 5, refillRate: 1 },
-      TEST_PREFIX
-    );
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new TokenBucketStrategy(store, {
+      algorithm: "token-bucket",
+      capacity: 5,
+      refillRate: 1,
+    });
 
     for (let i = 0; i < 5; i++) {
       const result = await strategy.consume("burst-user");
@@ -42,11 +44,12 @@ describe("TokenBucketStrategy", () => {
     const redis = await redisPromise;
     if (!redis) return;
 
-    const strategy = new TokenBucketStrategy(
-      redis,
-      { algorithm: "token-bucket", capacity: 2, refillRate: 10 },
-      TEST_PREFIX
-    );
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new TokenBucketStrategy(store, {
+      algorithm: "token-bucket",
+      capacity: 2,
+      refillRate: 10,
+    });
 
     await strategy.consume("refill-user");
     await strategy.consume("refill-user");

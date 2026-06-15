@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { SlidingWindowStrategy } from "../src/algorithms/sliding-window";
+import { RedisStore } from "../src/stores/redis-store";
 import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
 
 const TEST_PREFIX = "redislimit:test:sw";
@@ -29,11 +30,12 @@ describe("SlidingWindowStrategy", () => {
     const redis = await redisPromise;
     if (!redis) return;
 
-    const strategy = new SlidingWindowStrategy(
-      redis,
-      { algorithm: "sliding-window", limit: 5, window: 60 },
-      TEST_PREFIX
-    );
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new SlidingWindowStrategy(store, {
+      algorithm: "sliding-window",
+      limit: 5,
+      window: 60,
+    });
 
     for (let i = 0; i < 5; i++) {
       const result = await strategy.consume("user-1");
@@ -47,11 +49,12 @@ describe("SlidingWindowStrategy", () => {
     const redis = await redisPromise;
     if (!redis) return;
 
-    const strategy = new SlidingWindowStrategy(
-      redis,
-      { algorithm: "sliding-window", limit: 3, window: 60 },
-      TEST_PREFIX
-    );
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new SlidingWindowStrategy(store, {
+      algorithm: "sliding-window",
+      limit: 3,
+      window: 60,
+    });
 
     for (let i = 0; i < 3; i++) {
       await strategy.consume("user-2");
@@ -67,11 +70,12 @@ describe("SlidingWindowStrategy", () => {
     const redis = await redisPromise;
     if (!redis) return;
 
-    const strategy = new SlidingWindowStrategy(
-      redis,
-      { algorithm: "sliding-window", limit: 2, window: 60 },
-      TEST_PREFIX
-    );
+    const store = new RedisStore(redis, TEST_PREFIX);
+    const strategy = new SlidingWindowStrategy(store, {
+      algorithm: "sliding-window",
+      limit: 2,
+      window: 60,
+    });
 
     await strategy.consume("user-a");
     await strategy.consume("user-a");
