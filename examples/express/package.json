@@ -1,0 +1,13 @@
+{
+  "name": "redislimit-express-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "redislimit": "file:../.."
+  }
+}

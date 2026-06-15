@@ -1,0 +1,13 @@
+{
+  "name": "redislimit-fastify-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "ioredis": "^5.4.1",
+    "redislimit": "file:../.."
+  }
+}

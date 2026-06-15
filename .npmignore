@@ -1,0 +1,14 @@
+# Source (compiled output is published from dist/)
+src/
+test/
+examples/
+
+# Tooling
+.github/
+vitest.config.ts
+tsconfig.json
+
+# Dev artifacts
+coverage/
+*.log
+.DS_Store

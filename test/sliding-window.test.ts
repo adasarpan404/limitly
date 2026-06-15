@@ -1,0 +1,85 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { SlidingWindowStrategy } from "../src/algorithms/sliding-window";
+import { cleanupRedis, flushTestKeys, getTestRedis } from "./setup";
+
+const TEST_PREFIX = "redislimit:test:sw";
+
+describe("SlidingWindowStrategy", () => {
+  const redisPromise = getTestRedis();
+
+  beforeAll(async () => {
+    const redis = await redisPromise;
+    if (!redis) {
+      console.warn("Redis not available — skipping integration tests");
+    }
+  });
+
+  afterAll(async () => {
+    await cleanupRedis();
+  });
+
+  beforeEach(async () => {
+    const redis = await redisPromise;
+    if (redis) {
+      await flushTestKeys(redis, TEST_PREFIX);
+    }
+  });
+
+  it("allows requests under the limit", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const strategy = new SlidingWindowStrategy(
+      redis,
+      { algorithm: "sliding-window", limit: 5, window: 60 },
+      TEST_PREFIX
+    );
+
+    for (let i = 0; i < 5; i++) {
+      const result = await strategy.consume("user-1");
+      expect(result.allowed).toBe(true);
+      expect(result.limit).toBe(5);
+      expect(result.remaining).toBe(4 - i);
+    }
+  });
+
+  it("blocks requests over the limit", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const strategy = new SlidingWindowStrategy(
+      redis,
+      { algorithm: "sliding-window", limit: 3, window: 60 },
+      TEST_PREFIX
+    );
+
+    for (let i = 0; i < 3; i++) {
+      await strategy.consume("user-2");
+    }
+
+    const result = await strategy.consume("user-2");
+    expect(result.allowed).toBe(false);
+    expect(result.remaining).toBe(0);
+    expect(result.retryAfter).toBeGreaterThan(0);
+  });
+
+  it("isolates keys", async () => {
+    const redis = await redisPromise;
+    if (!redis) return;
+
+    const strategy = new SlidingWindowStrategy(
+      redis,
+      { algorithm: "sliding-window", limit: 2, window: 60 },
+      TEST_PREFIX
+    );
+
+    await strategy.consume("user-a");
+    await strategy.consume("user-a");
+
+    const blockedA = await strategy.consume("user-a");
+    const allowedB = await strategy.consume("user-b");
+
+    expect(blockedA.allowed).toBe(false);
+    expect(allowedB.allowed).toBe(true);
+  });
+});

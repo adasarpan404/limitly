@@ -1,0 +1,92 @@
+{
+  "name": "redislimit",
+  "version": "1.0.0",
+  "description": "Distributed, Redis-powered rate limiting for Express and Fastify",
+  "author": "Arpan Das <dasarpan471@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/arpandas/redislimit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arpandas/redislimit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arpandas/redislimit/issues"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./express": {
+      "types": "./dist/middleware/express.d.ts",
+      "import": "./dist/middleware/express.js",
+      "require": "./dist/middleware/express.js"
+    },
+    "./fastify": {
+      "types": "./dist/middleware/fastify.d.ts",
+      "import": "./dist/middleware/fastify.js",
+      "require": "./dist/middleware/fastify.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && rm -rf dist/scripts && cp -r src/scripts dist/scripts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test",
+    "pack:check": "npm pack --dry-run",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major"
+  },
+  "keywords": [
+    "rate-limit",
+    "rate-limiting",
+    "redis",
+    "express",
+    "fastify",
+    "sliding-window",
+    "token-bucket",
+    "distributed",
+    "middleware",
+    "ioredis"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "express": ">=4.0.0",
+    "fastify": ">=4.0.0",
+    "ioredis": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "express": "^4.19.2",
+    "fastify": "^4.28.0",
+    "ioredis": "^5.4.1",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
