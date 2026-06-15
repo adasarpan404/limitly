@@ -35,6 +35,7 @@ export class TokenBucketStrategy implements RateLimitStrategy {
     ]);
 
     const parsed = parseScriptResult(result);
+
     return {
       allowed: parsed.allowed,
       limit: parsed.limit,
