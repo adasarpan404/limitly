@@ -1,6 +1,6 @@
 {
   "name": "limitly",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Express-rate-limit, but distributed, Redis-powered, and production ready.",
   "author": "Arpan Das <dasarpan471@gmail.com>",
   "license": "MIT",
