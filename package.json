@@ -4,13 +4,13 @@
   "description": "Express-rate-limit, but distributed, Redis-powered, and production ready.",
   "author": "Arpan Das <dasarpan471@gmail.com>",
   "license": "MIT",
-  "homepage": "https://github.com/arpandas/limitly#readme",
+  "homepage": "https://github.com/adasarpan404/limitly#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arpandas/limitly.git"
+    "url": "git+https://github.com/adasarpan404/limitly.git"
   },
   "bugs": {
-    "url": "https://github.com/arpandas/limitly/issues"
+    "url": "https://github.com/adasarpan404/limitly/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
