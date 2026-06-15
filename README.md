@@ -1,4 +1,4 @@
-# redislimit
+# limitly
 
 Distributed, Redis-powered rate limiting for Express and Fastify.
 
@@ -7,7 +7,7 @@ Distributed, Redis-powered rate limiting for Express and Fastify.
 ## Install
 
 ```bash
-npm install redislimit ioredis
+npm install limitly ioredis
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ npm install redislimit ioredis
 ```typescript
 import express from "express";
 import Redis from "ioredis";
-import { createLimiter } from "redislimit";
+import { createLimiter } from "limitly";
 
 const app = express();
 const redis = new Redis();
@@ -29,7 +29,7 @@ app.use(
     limit: 100,
     window: 60,
     key: (req) => req.ip,
-  })
+  }),
 );
 ```
 
@@ -38,7 +38,7 @@ app.use(
 ```typescript
 import Fastify from "fastify";
 import Redis from "ioredis";
-import { createLimiter } from "redislimit";
+import { createLimiter } from "limitly";
 
 const fastify = Fastify();
 const limiter = createLimiter({ redis: new Redis() });
@@ -103,13 +103,13 @@ createLimiter({
 
 ```typescript
 // IP-based
-key: (req) => req.ip
+key: (req) => req.ip;
 
 // API Key
-key: (req) => req.headers["x-api-key"]
+key: (req) => req.headers["x-api-key"];
 
 // User ID
-key: (req) => req.user.id
+key: (req) => req.user.id;
 ```
 
 ## Response Headers
@@ -145,7 +145,7 @@ When Redis is unavailable:
 ```typescript
 createLimiter({
   redis: new Redis(),
-  failOpen: true,  // allow traffic (default)
+  failOpen: true, // allow traffic (default)
   // failOpen: false, // block with 503
 });
 ```
