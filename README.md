@@ -9,8 +9,21 @@ Distributed, Redis-powered rate limiting for Express, Fastify, Hono, Koa, Bun, a
 ```bash
 npm install limitly ioredis
 
+# Memcached backend
+npm install limitly memcached
+
 # NestJS
 npm install limitly ioredis @nestjs/common @nestjs/core
+```
+
+Framework-specific subpath imports are available for tree-shaking:
+
+```typescript
+import { createExpressMiddleware } from "limitly/express";
+import { createFastifyPlugin } from "limitly/fastify";
+import { createHonoMiddleware } from "limitly/hono";
+import { createKoaMiddleware } from "limitly/koa";
+import { createBunMiddleware } from "limitly/bun";
 ```
 
 ## Quick Start
@@ -207,6 +220,27 @@ const limiter = createLimiter({
 app.use(limiter.middleware({ key: (req) => req.ip }));
 ```
 
+## Programmatic Checks
+
+Use `limiter.check()` outside middleware — useful for login guards, background jobs, or custom response handling:
+
+```typescript
+const result = await limiter.check(req.ip ?? "unknown", {
+  algorithm: "sliding-window",
+  limit: 5,
+  window: 10,
+});
+
+if (!result.allowed) {
+  return res.status(429).json({
+    error: "Too many attempts",
+    retryAfter: result.retryAfter,
+  });
+}
+```
+
+`check()` respects limiter-wide defaults, `failOpen`, and global `onMetrics` hooks.
+
 ## Algorithms
 
 ### Sliding Window
@@ -342,6 +376,46 @@ limiter.middleware({
   },
 });
 ```
+
+## Metrics
+
+Emit observability events via the `onMetrics` hook. Set it globally on the limiter or per middleware/route:
+
+```typescript
+const limiter = createLimiter({
+  redis: new Redis(),
+  onMetrics: (event) => {
+    console.log(event.type, event.key, `${event.durationMs.toFixed(2)}ms`);
+  },
+});
+
+// Per-route override
+limiter.middleware({
+  algorithm: "sliding-window",
+  limit: 100,
+  window: 60,
+  onMetrics: (event) => metrics.increment(`ratelimit.${event.type}`),
+});
+```
+
+Event types:
+
+| Type | When |
+|------|------|
+| `allowed` | Request passed the rate limit check |
+| `blocked` | Request exceeded the limit |
+| `error` | Store operation failed |
+| `fail_open` | Store failed but `failOpen: true` allowed traffic through |
+
+Each event includes `key`, `algorithm`, `durationMs`, and optionally `store`, `context` (the request object), and `result` or `error` depending on type.
+
+Multiple hooks are supported:
+
+```typescript
+onMetrics: [logToConsole, sendToDatadog]
+```
+
+`limiter.check()` and all framework middleware use the same metrics pipeline.
 
 ## Fail Open / Closed
 
