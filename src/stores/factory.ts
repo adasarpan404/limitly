@@ -43,5 +43,10 @@ export function createStore(options: RedisLimitOptions): RateLimitStore {
     throw new Error(`Unsupported store type: ${storeType}`);
   }
 
-  return new RedisStore(createRedisClient(options.redis), keyPrefix, storeType);
+  const client = createRedisClient(options.redis);
+
+  return new RedisStore(client, keyPrefix, storeType, {
+    hashTag: options.hashTag,
+    warmupScripts: options.warmupScripts,
+  });
 }

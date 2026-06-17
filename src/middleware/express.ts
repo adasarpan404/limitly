@@ -2,7 +2,10 @@ import type { NextFunction, Request, Response } from "express";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders, setHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  bindConcurrencyRelease,
+  processLimitRequest,
+} from "../utils/limit-execution";
 
 const DEFAULT_KEY = (req: Request): string => req.ip ?? "unknown";
 
@@ -21,12 +24,12 @@ export function createExpressMiddleware(limiter: RedisLimit) {
       next: NextFunction
     ): Promise<void> => {
       const key = keyExtractor(req) ?? "unknown";
-      const outcome = await consumeRateLimit({
+      const outcome = await processLimitRequest({
+        limiter,
         strategy,
         key,
         options,
         failOpen,
-        storeType: limiter.getStoreType(),
         context: req,
       });
 
@@ -38,23 +41,34 @@ export function createExpressMiddleware(limiter: RedisLimit) {
         return;
       }
 
-      const result = outcome.result;
+      if (outcome.status === "blocked") {
+        if (sendHeaders) {
+          setHeaders(res, buildRateLimitHeaders(outcome.result));
+        }
+
+        if (options.onLimitReached) {
+          await options.onLimitReached(req, res);
+          return;
+        }
+
+        res.status(429).json({ error: "Too Many Requests" });
+        return;
+      }
 
       if (sendHeaders) {
-        setHeaders(res, buildRateLimitHeaders(result));
+        setHeaders(res, buildRateLimitHeaders(outcome.result));
       }
 
-      if (result.allowed) {
-        next();
-        return;
+      if (outcome.slotId) {
+        bindConcurrencyRelease({
+          strategy,
+          key,
+          slotId: outcome.slotId,
+          emitter: res,
+        });
       }
 
-      if (options.onLimitReached) {
-        await options.onLimitReached(req, res);
-        return;
-      }
-
-      res.status(429).json({ error: "Too Many Requests" });
+      next();
     };
   };
 }

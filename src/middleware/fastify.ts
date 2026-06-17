@@ -2,7 +2,10 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions, MiddlewareOptionsInput } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  bindConcurrencyRelease,
+  processLimitRequest,
+} from "../utils/limit-execution";
 
 const DEFAULT_KEY = (req: FastifyRequest): string => req.ip;
 
@@ -38,12 +41,12 @@ export function createFastifyPlugin(
 
     fastify.addHook("preHandler", async (request, reply) => {
       const key = keyExtractor(request) ?? "unknown";
-      const outcome = await consumeRateLimit({
+      const outcome = await processLimitRequest({
+        limiter,
         strategy,
         key,
         options: resolved,
         failOpen,
-        storeType: limiter.getStoreType(),
         context: request,
       });
 
@@ -55,19 +58,31 @@ export function createFastifyPlugin(
         return;
       }
 
-      const result = outcome.result;
+      if (outcome.status === "blocked") {
+        if (sendHeaders) {
+          setFastifyHeaders(reply, buildRateLimitHeaders(outcome.result));
+        }
 
-      if (sendHeaders) {
-        setFastifyHeaders(reply, buildRateLimitHeaders(result));
-      }
-
-      if (!result.allowed) {
         if (resolved.onLimitReached) {
           await resolved.onLimitReached(request, reply);
           return;
         }
 
         reply.status(429).send({ error: "Too Many Requests" });
+        return;
+      }
+
+      if (sendHeaders) {
+        setFastifyHeaders(reply, buildRateLimitHeaders(outcome.result));
+      }
+
+      if (outcome.slotId) {
+        bindConcurrencyRelease({
+          strategy,
+          key,
+          slotId: outcome.slotId,
+          emitter: reply.raw,
+        });
       }
     });
   };

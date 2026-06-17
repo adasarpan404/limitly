@@ -14,4 +14,11 @@ export interface RateLimitStore {
     capacity: number,
     refillRate: number
   ): Promise<RateLimitResult>;
+  concurrencyAcquire(
+    key: string,
+    limit: number,
+    ttl: number
+  ): Promise<RateLimitResult>;
+  concurrencyRelease(key: string, slotId: string): Promise<void>;
+  gcra(key: string, limit: number, window: number): Promise<RateLimitResult>;
 }

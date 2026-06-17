@@ -72,6 +72,22 @@ export function memcachedIncr(
   });
 }
 
+export function memcachedDecr(
+  client: MemcachedClient,
+  key: string,
+  amount = 1
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    client.decr(key, amount, (err: Error | undefined, result?: number | boolean) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(Number(result));
+    });
+  });
+}
+
 export function memcachedAdd(
   client: MemcachedClient,
   key: string,

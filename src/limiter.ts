@@ -37,6 +37,7 @@ export class RedisLimit {
     this.failOpen = options.failOpen ?? true;
     this.defaultOptions = {
       onMetrics: options.onMetrics,
+      tracer: options.tracer,
       ...options.default,
     };
   }
@@ -88,13 +89,43 @@ export class RedisLimit {
     );
   }
 
+  async acquire(
+    key: string,
+    config: MiddlewareOptionsInput = {},
+    options?: { failOpen?: boolean }
+  ): Promise<RateLimitResult> {
+    return this.check(key, config, options);
+  }
+
+  async release(
+    key: string,
+    slotId: string,
+    config: MiddlewareOptionsInput = {}
+  ): Promise<void> {
+    const resolved = this.resolveOptions(config);
+    if (resolved.algorithm !== "concurrency") {
+      throw new Error('release() requires algorithm: "concurrency"');
+    }
+
+    const strategy = this.createStrategy(
+      resolveAlgorithmConfig(config, this.defaultOptions)
+    );
+    if (!strategy.release) {
+      throw new Error("Configured strategy does not support release()");
+    }
+
+    await strategy.release(key, slotId);
+  }
+
   async check(
     key: string,
     config: MiddlewareOptionsInput = {},
     options?: { failOpen?: boolean }
   ): Promise<RateLimitResult> {
     const resolved = this.resolveOptions(config);
-    const strategy = this.createStrategy(resolved);
+    const strategy = this.createStrategy(
+      resolveAlgorithmConfig(config, this.defaultOptions)
+    );
     const shouldFailOpen = options?.failOpen ?? this.failOpen;
     const outcome = await consumeRateLimit({
       strategy,
@@ -140,7 +171,11 @@ export class RedisLimit {
 
   private createFailOpenResult(config: AlgorithmConfig): RateLimitResult {
     const limit =
-      config.algorithm === "sliding-window" ? config.limit : config.capacity;
+      config.algorithm === "sliding-window" ||
+      config.algorithm === "concurrency" ||
+      config.algorithm === "gcra"
+        ? config.limit
+        : config.capacity;
 
     return {
       allowed: true,

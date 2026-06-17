@@ -11,7 +11,6 @@ const limiter = createLimiter({ redis, onMetrics });
 
 app.use(
   limiter.middleware({
-    algorithm: "sliding-window",
     limit: 10,
     window: 60,
     key: (req) => req.ip,

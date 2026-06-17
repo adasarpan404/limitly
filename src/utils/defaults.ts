@@ -1,6 +1,8 @@
 import type {
   AlgorithmConfig,
   BaseMiddlewareOptions,
+  ConcurrencyConfig,
+  GcraConfig,
   MiddlewareOptions,
   MiddlewareOptionsInput,
   SlidingWindowConfig,
@@ -19,6 +21,18 @@ export const DEFAULT_TOKEN_BUCKET: TokenBucketConfig = {
   refillRate: 10,
 };
 
+export const DEFAULT_CONCURRENCY: ConcurrencyConfig = {
+  algorithm: "concurrency",
+  limit: 10,
+  ttl: 300,
+};
+
+export const DEFAULT_GCRA: GcraConfig = {
+  algorithm: "gcra",
+  limit: 100,
+  window: 60,
+};
+
 function pickBaseOptions(
   options: MiddlewareOptionsInput
 ): BaseMiddlewareOptions {
@@ -27,6 +41,7 @@ function pickBaseOptions(
     headers: options.headers,
     onLimitReached: options.onLimitReached,
     onMetrics: options.onMetrics,
+    tracer: options.tracer,
     failOpen: options.failOpen,
   };
 }
@@ -37,7 +52,7 @@ export function resolveMiddlewareOptions(
 ): MiddlewareOptions {
   const merged: MiddlewareOptionsInput = { ...defaults, ...options };
   const base = pickBaseOptions(merged);
-  const algorithm = merged.algorithm ?? DEFAULT_SLIDING_WINDOW.algorithm;
+  const algorithm = merged.algorithm ?? DEFAULT_GCRA.algorithm;
 
   if (algorithm === "token-bucket") {
     return {
@@ -45,6 +60,24 @@ export function resolveMiddlewareOptions(
       algorithm: "token-bucket",
       capacity: merged.capacity ?? DEFAULT_TOKEN_BUCKET.capacity,
       refillRate: merged.refillRate ?? DEFAULT_TOKEN_BUCKET.refillRate,
+    };
+  }
+
+  if (algorithm === "concurrency") {
+    return {
+      ...base,
+      algorithm: "concurrency",
+      limit: merged.limit ?? DEFAULT_CONCURRENCY.limit,
+      ttl: merged.ttl ?? DEFAULT_CONCURRENCY.ttl,
+    };
+  }
+
+  if (algorithm === "gcra") {
+    return {
+      ...base,
+      algorithm: "gcra",
+      limit: merged.limit ?? DEFAULT_GCRA.limit,
+      window: merged.window ?? DEFAULT_GCRA.window,
     };
   }
 
@@ -66,6 +99,22 @@ export function resolveAlgorithmConfig(
       algorithm: "token-bucket",
       capacity: resolved.capacity,
       refillRate: resolved.refillRate,
+    };
+  }
+
+  if (resolved.algorithm === "concurrency") {
+    return {
+      algorithm: "concurrency",
+      limit: resolved.limit,
+      ttl: resolved.ttl ?? DEFAULT_CONCURRENCY.ttl,
+    };
+  }
+
+  if (resolved.algorithm === "gcra") {
+    return {
+      algorithm: "gcra",
+      limit: resolved.limit,
+      window: resolved.window,
     };
   }
 

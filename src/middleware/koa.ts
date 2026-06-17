@@ -2,7 +2,11 @@ import type { Context, Next } from "koa";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  bindConcurrencyRelease,
+  processLimitRequest,
+  releaseConcurrencySlot,
+} from "../utils/limit-execution";
 
 const DEFAULT_KEY = (ctx: Context): string => ctx.ip ?? "unknown";
 
@@ -28,12 +32,12 @@ export function createKoaMiddleware(limiter: RedisLimit) {
 
     return async (ctx: Context, next: Next): Promise<void> => {
       const key = keyExtractor(ctx) ?? "unknown";
-      const outcome = await consumeRateLimit({
+      const outcome = await processLimitRequest({
+        limiter,
         strategy,
         key,
         options,
         failOpen,
-        storeType: limiter.getStoreType(),
         context: ctx,
       });
 
@@ -46,23 +50,35 @@ export function createKoaMiddleware(limiter: RedisLimit) {
         return;
       }
 
-      const result = outcome.result;
+      if (outcome.status === "blocked") {
+        if (sendHeaders) {
+          setKoaHeaders(ctx, buildRateLimitHeaders(outcome.result));
+        }
 
-      if (sendHeaders) {
-        setKoaHeaders(ctx, buildRateLimitHeaders(result));
-      }
+        if (options.onLimitReached) {
+          await options.onLimitReached(ctx.request, ctx.response);
+          return;
+        }
 
-      if (result.allowed) {
-        return next();
-      }
-
-      if (options.onLimitReached) {
-        await options.onLimitReached(ctx.request, ctx.response);
+        ctx.status = 429;
+        ctx.body = { error: "Too Many Requests" };
         return;
       }
 
-      ctx.status = 429;
-      ctx.body = { error: "Too Many Requests" };
+      if (sendHeaders) {
+        setKoaHeaders(ctx, buildRateLimitHeaders(outcome.result));
+      }
+
+      if (outcome.slotId) {
+        bindConcurrencyRelease({
+          strategy,
+          key,
+          slotId: outcome.slotId,
+          emitter: ctx.res,
+        });
+      }
+
+      return next();
     };
   };
 }

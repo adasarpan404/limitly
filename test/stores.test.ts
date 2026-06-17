@@ -38,6 +38,7 @@ describe("createStore", () => {
       get: vi.fn(),
       gets: vi.fn(),
       incr: vi.fn(),
+      decr: vi.fn(),
       add: vi.fn(),
       cas: vi.fn(),
     } as unknown as MemcachedClient;

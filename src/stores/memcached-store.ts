@@ -1,9 +1,11 @@
+import { randomUUID } from "crypto";
 import type { RateLimitResult } from "../types";
 import type { MemcachedClient } from "../types";
 import { buildKey } from "../utils/redis";
 import {
   memcachedAdd,
   memcachedCas,
+  memcachedDecr,
   memcachedGet,
   memcachedGets,
   memcachedIncr,
@@ -175,5 +177,137 @@ export class MemcachedStore implements RateLimitStore {
     }
 
     throw new Error("Token bucket CAS retries exhausted");
+  }
+
+  async gcra(
+    key: string,
+    limit: number,
+    window: number
+  ): Promise<RateLimitResult> {
+    const cacheKey = buildKey(this.keyPrefix, `gcra:${key}`);
+    const now = Date.now();
+    const emissionInterval = (window * 1000) / limit;
+    const burstTolerance = window * 1000;
+    const ttl = Math.ceil(window) + 1;
+
+    for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
+      const existing = await memcachedGets(this.client, cacheKey);
+      const tat = existing ? Number(existing.value) : now;
+      const earliest = tat - burstTolerance;
+
+      if (now < earliest) {
+        const retryAfter = Math.max(1, Math.ceil((earliest - now) / 1000));
+        const reset = Math.ceil(tat / 1000);
+
+        return {
+          allowed: false,
+          limit,
+          remaining: 0,
+          reset,
+          retryAfter,
+        };
+      }
+
+      const newTat = Math.max(tat, now) + emissionInterval;
+      let remaining = Math.floor(
+        (newTat - now + burstTolerance - emissionInterval) / emissionInterval
+      );
+      remaining = Math.max(0, Math.min(limit - 1, remaining));
+      const reset = Math.ceil(newTat / 1000);
+      const payload = String(newTat);
+
+      if (!existing) {
+        try {
+          await memcachedAdd(this.client, cacheKey, payload, ttl);
+          return {
+            allowed: true,
+            limit,
+            remaining,
+            reset,
+          };
+        } catch {
+          continue;
+        }
+      }
+
+      const updated = await memcachedCas(
+        this.client,
+        cacheKey,
+        payload,
+        existing.cas,
+        ttl
+      );
+
+      if (updated) {
+        return {
+          allowed: true,
+          limit,
+          remaining,
+          reset,
+        };
+      }
+    }
+
+    throw new Error("GCRA CAS retries exhausted");
+  }
+
+  async concurrencyAcquire(
+    key: string,
+    limit: number,
+    ttl: number
+  ): Promise<RateLimitResult> {
+    const counterKey = buildKey(this.keyPrefix, `cc:${key}`);
+    const slotId = randomUUID();
+
+    await memcachedAdd(this.client, counterKey, "0", ttl);
+    const count = await memcachedIncr(this.client, counterKey, 1);
+    const reset = Math.ceil(Date.now() / 1000) + ttl;
+
+    if (count > limit) {
+      await memcachedDecr(this.client, counterKey, 1);
+      return {
+        allowed: false,
+        limit,
+        remaining: 0,
+        reset,
+        retryAfter: ttl,
+      };
+    }
+
+    return {
+      allowed: true,
+      limit,
+      remaining: Math.max(0, limit - count),
+      reset,
+      slotId,
+    };
+  }
+
+  async concurrencyRelease(key: string, _slotId: string): Promise<void> {
+    const counterKey = buildKey(this.keyPrefix, `cc:${key}`);
+
+    for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
+      const current = await memcachedGets(this.client, counterKey);
+      if (!current) {
+        return;
+      }
+
+      const value = Number(current.value);
+      if (value <= 0) {
+        return;
+      }
+
+      const updated = await memcachedCas(
+        this.client,
+        counterKey,
+        String(value - 1),
+        current.cas,
+        300
+      );
+
+      if (updated) {
+        return;
+      }
+    }
   }
 }

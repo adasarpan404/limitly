@@ -2,7 +2,10 @@ import type { Context, Next } from "hono";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  processLimitRequest,
+  releaseConcurrencySlot,
+} from "../utils/limit-execution";
 
 const DEFAULT_KEY = (c: Context): string => {
   const forwarded = c.req.header("x-forwarded-for");
@@ -34,12 +37,12 @@ export function createHonoMiddleware(limiter: RedisLimit) {
 
     return async (c: Context, next: Next): Promise<Response | void> => {
       const key = keyExtractor(c) ?? "unknown";
-      const outcome = await consumeRateLimit({
+      const outcome = await processLimitRequest({
+        limiter,
         strategy,
         key,
         options,
         failOpen,
-        storeType: limiter.getStoreType(),
         context: c,
       });
 
@@ -50,22 +53,36 @@ export function createHonoMiddleware(limiter: RedisLimit) {
         return c.json({ error: "Service Unavailable" }, 503);
       }
 
-      const result = outcome.result;
+      if (outcome.status === "blocked") {
+        if (sendHeaders) {
+          setHonoHeaders(c, buildRateLimitHeaders(outcome.result));
+        }
+
+        if (options.onLimitReached) {
+          await options.onLimitReached(c.req.raw, c);
+          return;
+        }
+
+        return c.json({ error: "Too Many Requests" }, 429);
+      }
 
       if (sendHeaders) {
-        setHonoHeaders(c, buildRateLimitHeaders(result));
+        setHonoHeaders(c, buildRateLimitHeaders(outcome.result));
       }
 
-      if (result.allowed) {
-        return next();
+      if (outcome.slotId) {
+        try {
+          return await next();
+        } finally {
+          await releaseConcurrencySlot({
+            strategy,
+            key,
+            slotId: outcome.slotId,
+          });
+        }
       }
 
-      if (options.onLimitReached) {
-        await options.onLimitReached(c.req.raw, c);
-        return;
-      }
-
-      return c.json({ error: "Too Many Requests" }, 429);
+      return next();
     };
   };
 }

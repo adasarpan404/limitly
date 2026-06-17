@@ -18,11 +18,26 @@ export {
   RATE_LIMIT_KEY,
 } from "./middleware/nest";
 export type { NestRateLimitOptions } from "./middleware/nest";
+export { ConcurrencyStrategy } from "./algorithms/concurrency";
+export { GcraStrategy } from "./algorithms/gcra";
 export { SlidingWindowStrategy } from "./algorithms/sliding-window";
 export { TokenBucketStrategy } from "./algorithms/token-bucket";
 export type { RateLimitStrategy } from "./algorithms/strategy";
-export { DEFAULT_KEY_PREFIX } from "./utils/redis";
 export {
+  DEFAULT_CLUSTER_OPTIONS,
+  DEFAULT_KEY_PREFIX,
+  buildKey,
+  createRedisClient,
+  isRedisCluster,
+} from "./utils/redis";
+export {
+  getClusterScriptDefinitions,
+  registerRedisScripts,
+  warmupRedisScripts,
+} from "./utils/scripts";
+export {
+  DEFAULT_CONCURRENCY,
+  DEFAULT_GCRA,
   DEFAULT_SLIDING_WINDOW,
   DEFAULT_TOKEN_BUCKET,
   resolveAlgorithmConfig,
@@ -30,12 +45,15 @@ export {
 } from "./utils/defaults";
 export { consumeRateLimit } from "./utils/metrics";
 export type { RateLimitCheckOutcome } from "./utils/metrics";
+export type { RateLimitSpan, RateLimitTracer } from "./observability/types";
 export { createStore, resolveStoreType } from "./stores/factory";
 export { RedisStore } from "./stores/redis-store";
 export { MemcachedStore } from "./stores/memcached-store";
 export type { RateLimitStore, StoreType } from "./stores/types";
 export type {
   AlgorithmConfig,
+  ConcurrencyConfig,
+  GcraConfig,
   BaseMiddlewareOptions,
   MemcachedClient,
   MemcachedConfig,
@@ -47,6 +65,7 @@ export type {
   RateLimitMetricsHook,
   RateLimitResult,
   RedisClient,
+  RedisClusterConfig,
   RedisConfig,
   RedisLimitOptions,
   SlidingWindowConfig,

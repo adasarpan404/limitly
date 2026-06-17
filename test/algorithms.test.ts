@@ -18,6 +18,20 @@ function createMockStore(overrides?: Partial<RateLimitStore>): RateLimitStore {
       remaining: 4,
       reset: 1710000000,
     }),
+    concurrencyAcquire: vi.fn().mockResolvedValue({
+      allowed: true,
+      limit: 3,
+      remaining: 2,
+      reset: 1710000000,
+      slotId: "slot-1",
+    }),
+    concurrencyRelease: vi.fn().mockResolvedValue(undefined),
+    gcra: vi.fn().mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    }),
     ...overrides,
   };
 }

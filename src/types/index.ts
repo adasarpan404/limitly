@@ -1,5 +1,6 @@
-import type { Cluster, Redis, RedisOptions } from "ioredis";
+import type { Cluster, ClusterOptions, Redis, RedisOptions } from "ioredis";
 import type Memcached from "memcached";
+import type { RateLimitTracer } from "../observability/types";
 import type { StoreType } from "../stores/types";
 
 
@@ -7,11 +8,16 @@ export type { StoreType };
 
 export type RedisClient = Redis | Cluster;
 
+export type RedisClusterConfig = {
+  nodes: { host: string; port: number }[];
+  options?: ClusterOptions;
+};
+
 export type RedisConfig =
   | RedisClient
   | string
   | RedisOptions
-  | { nodes: { host: string; port: number }[]; options?: RedisOptions };
+  | RedisClusterConfig;
 
 export type MemcachedClient = Memcached;
 
@@ -33,10 +39,19 @@ export interface RedisLimitOptions {
   failOpen?: boolean;
   /** Storage key prefix. Defaults to "limitly". Keys are stored as `{prefix}:sw:{id}` or `{prefix}:tb:{id}`. */
   keyPrefix?: string;
+  /**
+   * Redis Cluster hash tag for slot pinning. Keys become `{tag}:{prefix}:sw:{id}`.
+   * Leave unset to distribute keys across slots (recommended for throughput).
+   */
+  hashTag?: string;
+  /** Preload Lua scripts on all cluster masters at startup. Defaults to `true` for cluster. */
+  warmupScripts?: boolean;
   /** Default rate limit config applied when middleware options omit algorithm settings. */
   default?: MiddlewareOptionsInput;
   /** Global metrics hook applied to all rate limit checks. */
   onMetrics?: RateLimitMetricsHook | RateLimitMetricsHook[];
+  /** Global tracer for distributed tracing of rate limit checks. */
+  tracer?: RateLimitTracer;
 }
 
 export interface RateLimitResult {
@@ -45,10 +60,13 @@ export interface RateLimitResult {
   remaining: number;
   reset: number;
   retryAfter?: number;
+  /** Present when a concurrency slot was acquired. */
+  slotId?: string;
 }
 
 export interface RateLimitStrategy {
   consume(key: string): Promise<RateLimitResult>;
+  release?(key: string, slotId: string): Promise<void>;
 }
 
 export interface SlidingWindowConfig {
@@ -63,7 +81,25 @@ export interface TokenBucketConfig {
   refillRate: number;
 }
 
-export type AlgorithmConfig = SlidingWindowConfig | TokenBucketConfig;
+export interface ConcurrencyConfig {
+  algorithm: "concurrency";
+  /** Maximum in-flight requests per key. */
+  limit: number;
+  /** Lease TTL in seconds for stale slot cleanup. Defaults to 300. */
+  ttl?: number;
+}
+
+export interface GcraConfig {
+  algorithm: "gcra";
+  limit: number;
+  window: number;
+}
+
+export type AlgorithmConfig =
+  | SlidingWindowConfig
+  | TokenBucketConfig
+  | ConcurrencyConfig
+  | GcraConfig;
 
 export type RateLimitMetricsEvent =
   | {
@@ -112,17 +148,19 @@ export interface BaseMiddlewareOptions {
   headers?: boolean;
   onLimitReached?: (req: unknown, res: unknown) => void | Promise<void>;
   onMetrics?: RateLimitMetricsHook | RateLimitMetricsHook[];
+  tracer?: RateLimitTracer;
   failOpen?: boolean;
 }
 
 export type MiddlewareOptions = BaseMiddlewareOptions & AlgorithmConfig;
 
 export type MiddlewareOptionsInput = BaseMiddlewareOptions & {
-  algorithm?: "sliding-window" | "token-bucket";
+  algorithm?: "sliding-window" | "token-bucket" | "concurrency" | "gcra";
   limit?: number;
   window?: number;
   capacity?: number;
   refillRate?: number;
+  ttl?: number;
 };
 
 export interface RateLimitHeaders {

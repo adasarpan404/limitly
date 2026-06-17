@@ -115,7 +115,7 @@ describe("RedisLimit", () => {
     expect(result.allowed).toBe(true);
     expect(result.limit).toBe(100);
 
-    await redis.del("limitly:test:default-algo:sw:default-algo-user");
+    await redis.del("limitly:test:default-algo:gcra:default-algo-user");
   });
 
   it("applies limiter default config to middleware", async () => {
@@ -131,7 +131,7 @@ describe("RedisLimit", () => {
     const strategy = limiter.createStrategyFromOptions();
     const first = await strategy.consume("mw-user");
     expect(first.limit).toBe(3);
-    await redis.del("limitly:test:middleware-default:sw:mw-user");
+    await redis.del("limitly:test:middleware-default:gcra:mw-user");
   });
 
   it("check works with token-bucket algorithm", async () => {

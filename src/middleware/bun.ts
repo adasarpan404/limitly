@@ -1,7 +1,10 @@
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptions, RateLimitHeaders } from "../types";
 import { buildRateLimitHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  processLimitRequest,
+  releaseConcurrencySlot,
+} from "../utils/limit-execution";
 
 export type BunNext = () => Promise<Response>;
 
@@ -65,12 +68,12 @@ export function createBunMiddleware(limiter: RedisLimit) {
 
     return async (req: Request, next: BunNext): Promise<Response> => {
       const key = keyExtractor(req) ?? "unknown";
-      const outcome = await consumeRateLimit({
+      const outcome = await processLimitRequest({
+        limiter,
         strategy,
         key,
         options,
         failOpen,
-        storeType: limiter.getStoreType(),
         context: req,
       });
 
@@ -81,10 +84,9 @@ export function createBunMiddleware(limiter: RedisLimit) {
         return jsonResponse({ error: "Service Unavailable" }, 503);
       }
 
-      const result = outcome.result;
-      const rateLimitHeaders = buildRateLimitHeaders(result);
+      if (outcome.status === "blocked") {
+        const rateLimitHeaders = buildRateLimitHeaders(outcome.result);
 
-      if (!result.allowed) {
         if (options.onLimitReached) {
           await options.onLimitReached(req, { headers: rateLimitHeaders });
           return new Response(null, {
@@ -100,13 +102,25 @@ export function createBunMiddleware(limiter: RedisLimit) {
         );
       }
 
-      const response = await next();
+      const rateLimitHeaders = buildRateLimitHeaders(outcome.result);
 
-      if (sendHeaders) {
-        return applyRateLimitHeaders(response, rateLimitHeaders);
+      try {
+        const response = await next();
+
+        if (sendHeaders) {
+          return applyRateLimitHeaders(response, rateLimitHeaders);
+        }
+
+        return response;
+      } finally {
+        if (outcome.slotId) {
+          await releaseConcurrencySlot({
+            strategy,
+            key,
+            slotId: outcome.slotId,
+          });
+        }
       }
-
-      return response;
     };
   };
 }

@@ -15,7 +15,10 @@ import type { Request, Response } from "express";
 import type { RedisLimit } from "../limiter";
 import type { MiddlewareOptionsInput } from "../types";
 import { buildRateLimitHeaders, setHeaders } from "../utils/headers";
-import { consumeRateLimit } from "../utils/metrics";
+import {
+  bindConcurrencyRelease,
+  processLimitRequest,
+} from "../utils/limit-execution";
 
 const DEFAULT_KEY = (req: Request): string => req.ip ?? "unknown";
 
@@ -69,12 +72,12 @@ export function createNestGuard(limiter: RedisLimit) {
         const sendHeaders = options.headers !== false;
         const failOpen = options.failOpen ?? true;
 
-        const outcome = await consumeRateLimit({
+        const outcome = await processLimitRequest({
+          limiter,
           strategy,
           key,
           options,
           failOpen,
-          storeType: limiter.getStoreType(),
           context: context,
         });
 
@@ -87,25 +90,36 @@ export function createNestGuard(limiter: RedisLimit) {
           });
         }
 
-        const result = outcome.result;
+        if (outcome.status === "blocked") {
+          if (sendHeaders) {
+            setHeaders(response, buildRateLimitHeaders(outcome.result));
+          }
+
+          if (options.onLimitReached) {
+            await options.onLimitReached(request, response);
+            return false;
+          }
+
+          throw new HttpException(
+            { error: "Too Many Requests" },
+            HttpStatus.TOO_MANY_REQUESTS
+          );
+        }
 
         if (sendHeaders) {
-          setHeaders(response, buildRateLimitHeaders(result));
+          setHeaders(response, buildRateLimitHeaders(outcome.result));
         }
 
-        if (result.allowed) {
-          return true;
+        if (outcome.slotId) {
+          bindConcurrencyRelease({
+            strategy,
+            key,
+            slotId: outcome.slotId,
+            emitter: response,
+          });
         }
 
-        if (options.onLimitReached) {
-          await options.onLimitReached(request, response);
-          return false;
-        }
-
-        throw new HttpException(
-          { error: "Too Many Requests" },
-          HttpStatus.TOO_MANY_REQUESTS
-        );
+        return true;
       }
     }
 

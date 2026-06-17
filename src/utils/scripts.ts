@@ -1,11 +1,26 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { Cluster } from "ioredis";
 import type { RedisClient } from "../types";
 
-const scriptCache = new Map<string, string>();
-const shaCache = new Map<string, string>();
+function isRedisCluster(client: RedisClient): client is Cluster {
+  return client instanceof Cluster || client.isCluster === true;
+}
 
-function loadScript(name: string): string {
+export const SCRIPT_COMMANDS = {
+  sliding: "limitlySliding",
+  token: "limitlyToken",
+  concurrencyAcquire: "limitlyConcurrencyAcquire",
+  concurrencyRelease: "limitlyConcurrencyRelease",
+  gcra: "limitlyGcra",
+} as const;
+
+export type ScriptName = keyof typeof SCRIPT_COMMANDS;
+
+const scriptCache = new Map<string, string>();
+const registeredClients = new WeakSet<object>();
+
+function loadScript(name: ScriptName): string {
   const cached = scriptCache.get(name);
   if (cached) {
     return cached;
@@ -17,66 +32,99 @@ function loadScript(name: string): string {
   return script;
 }
 
-export async function loadScriptSha(
-  redis: RedisClient,
-  name: string
-): Promise<string> {
-  const cacheKey = getCacheKey(redis, name);
-  const cached = shaCache.get(cacheKey);
-  if (cached) {
-    return cached;
+export function getClusterScriptDefinitions(): Record<
+  string,
+  { lua: string; numberOfKeys: number }
+> {
+  return {
+    [SCRIPT_COMMANDS.sliding]: {
+      numberOfKeys: 1,
+      lua: loadScript("sliding"),
+    },
+    [SCRIPT_COMMANDS.token]: {
+      numberOfKeys: 1,
+      lua: loadScript("token"),
+    },
+    [SCRIPT_COMMANDS.concurrencyAcquire]: {
+      numberOfKeys: 1,
+      lua: loadScript("concurrencyAcquire"),
+    },
+    [SCRIPT_COMMANDS.concurrencyRelease]: {
+      numberOfKeys: 1,
+      lua: loadScript("concurrencyRelease"),
+    },
+    [SCRIPT_COMMANDS.gcra]: {
+      numberOfKeys: 1,
+      lua: loadScript("gcra"),
+    },
+  };
+}
+
+export function registerRedisScripts(redis: RedisClient): void {
+  if (registeredClients.has(redis)) {
+    return;
   }
 
-  const script = loadScript(name);
-  const sha = (await redis.script("LOAD", script)) as string;
-  shaCache.set(cacheKey, sha);
-  return sha;
+  for (const name of Object.keys(SCRIPT_COMMANDS) as ScriptName[]) {
+    const command = SCRIPT_COMMANDS[name];
+    redis.defineCommand(command, {
+      numberOfKeys: 1,
+      lua: loadScript(name),
+    });
+  }
+
+  registeredClients.add(redis);
+}
+
+export async function warmupRedisScripts(redis: RedisClient): Promise<void> {
+  registerRedisScripts(redis);
+
+  if (!isRedisCluster(redis)) {
+    return;
+  }
+
+  const masters = redis.nodes("master");
+  if (masters.length === 0) {
+    return;
+  }
+
+  const definitions = getClusterScriptDefinitions();
+  await Promise.all(
+    masters.flatMap((node) =>
+      Object.values(definitions).map((definition) =>
+        node.script("LOAD", definition.lua)
+      )
+    )
+  );
+}
+
+type ScriptRunner = (
+  ...args: (string | number)[]
+) => Promise<(string | number)[]>;
+
+function getScriptRunner(redis: RedisClient, name: ScriptName): ScriptRunner {
+  const command = SCRIPT_COMMANDS[name];
+  const runner = (redis as unknown as Record<string, ScriptRunner | undefined>)[
+    command
+  ];
+
+  if (!runner) {
+    throw new Error(`Redis script command "${command}" is not registered`);
+  }
+
+  return runner.bind(redis) as ScriptRunner;
 }
 
 export async function evalScript(
   redis: RedisClient,
-  name: string,
+  name: ScriptName,
   keys: string[],
   args: (string | number)[]
 ): Promise<(string | number)[]> {
-  const sha = await loadScriptSha(redis, name);
-
-  try {
-    const result = await redis.evalsha(
-      sha,
-      keys.length,
-      ...keys,
-      ...args.map(String)
-    );
-    return result as (string | number)[];
-  } catch (error) {
-    if (isNoScriptError(error)) {
-      const script = loadScript(name);
-      const result = await redis.eval(
-        script,
-        keys.length,
-        ...keys,
-        ...args.map(String)
-      );
-      const newSha = (await redis.script("LOAD", script)) as string;
-      shaCache.set(getCacheKey(redis, name), newSha);
-      return result as (string | number)[];
-    }
-    throw error;
-  }
-}
-
-function getCacheKey(redis: RedisClient, name: string): string {
-  const status = redis.status ?? "unknown";
-  return `${status}:${name}`;
-}
-
-function isNoScriptError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.message.includes("NOSCRIPT") ||
-      error.message.includes("No matching script"))
-  );
+  registerRedisScripts(redis);
+  const runner = getScriptRunner(redis, name);
+  const result = await runner(...keys, ...args);
+  return result;
 }
 
 export function parseScriptResult(
@@ -87,12 +135,21 @@ export function parseScriptResult(
   remaining: number;
   reset: number;
   retryAfter: number;
+  slotId?: string;
 } {
-  return {
+  const parsed = {
     allowed: Number(result[0]) === 1,
     limit: Number(result[1]),
     remaining: Number(result[2]),
     reset: Number(result[3]),
     retryAfter: Number(result[4]),
+    slotId: undefined as string | undefined,
   };
+
+  const slotId = result[5];
+  if (parsed.allowed && slotId !== undefined && String(slotId).length > 0) {
+    parsed.slotId = String(slotId);
+  }
+
+  return parsed;
 }

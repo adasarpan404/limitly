@@ -1,10 +1,11 @@
-import Redis from "ioredis";
+import Redis, { Cluster } from "ioredis";
 import { describe, it, expect } from "vitest";
 import { resolveStoreType } from "../src/stores/factory";
 import {
   buildKey,
   createRedisClient,
   DEFAULT_KEY_PREFIX,
+  isRedisCluster,
 } from "../src/utils/redis";
 
 describe("buildKey", () => {
@@ -16,6 +17,12 @@ describe("buildKey", () => {
     expect(DEFAULT_KEY_PREFIX).toBe("limitly");
     expect(buildKey(DEFAULT_KEY_PREFIX, "sw:api-key-1")).toBe(
       "limitly:sw:api-key-1"
+    );
+  });
+
+  it("supports optional hash tags for cluster slot pinning", () => {
+    expect(buildKey("limitly", "sw:api-key-1", "prod")).toBe(
+      "{prod}:limitly:sw:api-key-1"
     );
   });
 });
@@ -34,6 +41,15 @@ describe("createRedisClient", () => {
   it("creates client from options object", () => {
     const client = createRedisClient({ host: "localhost", port: 6379, lazyConnect: true });
     expect(client).toBeInstanceOf(Redis);
+  });
+
+  it("creates cluster client from nodes config", () => {
+    const client = createRedisClient({
+      nodes: [{ host: "127.0.0.1", port: 7000 }],
+      options: { lazyConnect: true },
+    });
+    expect(client).toBeInstanceOf(Cluster);
+    expect(isRedisCluster(client)).toBe(true);
   });
 });
 

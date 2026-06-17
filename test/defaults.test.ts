@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_GCRA,
   DEFAULT_SLIDING_WINDOW,
   DEFAULT_TOKEN_BUCKET,
   resolveAlgorithmConfig,
@@ -7,8 +8,8 @@ import {
 } from "../src/utils/defaults";
 
 describe("resolveMiddlewareOptions", () => {
-  it("uses sliding-window defaults when no options provided", () => {
-    expect(resolveMiddlewareOptions()).toEqual(DEFAULT_SLIDING_WINDOW);
+  it("uses gcra defaults when no options provided", () => {
+    expect(resolveMiddlewareOptions()).toEqual(DEFAULT_GCRA);
   });
 
   it("merges limiter-level defaults", () => {
@@ -18,7 +19,7 @@ describe("resolveMiddlewareOptions", () => {
         { limit: 50, window: 30 }
       )
     ).toEqual({
-      algorithm: "sliding-window",
+      algorithm: "gcra",
       limit: 50,
       window: 30,
       key: expect.any(Function),
@@ -29,9 +30,23 @@ describe("resolveMiddlewareOptions", () => {
     expect(
       resolveMiddlewareOptions({ limit: 10 }, { limit: 50, window: 30 })
     ).toEqual({
-      algorithm: "sliding-window",
+      algorithm: "gcra",
       limit: 10,
       window: 30,
+    });
+  });
+
+  it("resolves sliding-window when algorithm is specified", () => {
+    expect(
+      resolveMiddlewareOptions({
+        algorithm: "sliding-window",
+        limit: 20,
+        window: 15,
+      })
+    ).toEqual({
+      algorithm: "sliding-window",
+      limit: 20,
+      window: 15,
     });
   });
 
@@ -61,13 +76,27 @@ describe("resolveMiddlewareOptions", () => {
 });
 
 describe("resolveAlgorithmConfig", () => {
-  it("returns algorithm config without middleware fields", () => {
+  it("returns gcra config by default", () => {
     expect(
       resolveAlgorithmConfig({
         limit: 25,
         window: 15,
         key: () => "x",
         headers: false,
+      })
+    ).toEqual({
+      algorithm: "gcra",
+      limit: 25,
+      window: 15,
+    });
+  });
+
+  it("returns sliding-window when explicitly configured", () => {
+    expect(
+      resolveAlgorithmConfig({
+        algorithm: "sliding-window",
+        limit: 25,
+        window: 15,
       })
     ).toEqual({
       algorithm: "sliding-window",

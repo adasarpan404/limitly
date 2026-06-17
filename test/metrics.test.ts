@@ -109,6 +109,65 @@ describe("consumeRateLimit", () => {
     );
   });
 
+  it("creates trace spans when tracer is provided", async () => {
+    const span = {
+      setAttribute: vi.fn(),
+      setStatus: vi.fn(),
+      end: vi.fn(),
+    };
+    const tracer = {
+      startSpan: vi.fn().mockReturnValue(span),
+    };
+    const consume = vi.fn().mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+    });
+
+    await consumeRateLimit({
+      strategy: createStrategy(consume),
+      key: "user-trace",
+      options: { ...baseOptions, tracer },
+      failOpen: true,
+      storeType: "redis",
+    });
+
+    expect(tracer.startSpan).toHaveBeenCalledWith("limitly.check", {
+      "limitly.algorithm": "sliding-window",
+      "limitly.store": "redis",
+    });
+    expect(span.setAttribute).toHaveBeenCalledWith("limitly.outcome", "blocked");
+    expect(span.setAttribute).toHaveBeenCalledWith("limitly.limit", 1);
+    expect(span.setAttribute).toHaveBeenCalledWith("limitly.remaining", 0);
+    expect(span.setAttribute).toHaveBeenCalledWith("limitly.allowed", false);
+    expect(span.setStatus).toHaveBeenCalledWith(true);
+    expect(span.end).toHaveBeenCalledOnce();
+  });
+
+  it("marks trace spans as error when store fails", async () => {
+    const span = {
+      setAttribute: vi.fn(),
+      setStatus: vi.fn(),
+      end: vi.fn(),
+    };
+    const tracer = {
+      startSpan: vi.fn().mockReturnValue(span),
+    };
+    const consume = vi.fn().mockRejectedValue(new Error("Redis down"));
+
+    await consumeRateLimit({
+      strategy: createStrategy(consume),
+      key: "user-error",
+      options: { ...baseOptions, tracer },
+      failOpen: true,
+    });
+
+    expect(span.setAttribute).toHaveBeenCalledWith("limitly.outcome", "error");
+    expect(span.setStatus).toHaveBeenCalledWith(false, "Redis down");
+    expect(span.end).toHaveBeenCalledOnce();
+  });
+
   it("supports multiple metrics hooks", async () => {
     const hookA = vi.fn();
     const hookB = vi.fn();
