@@ -118,6 +118,15 @@ export class RedisLimit {
     await strategy.release(key, slotId);
   }
 
+  /**
+   * Performs a programmatic rate limit check for a given key.
+   * Useful outside of standard HTTP middleware (e.g., in background tasks, queues, or custom request handlers).
+   * 
+   * @param key The unique identifier to rate limit (e.g. IP address or API key)
+   * @param config Optional middleware configuration overrides
+   * @param options Additional options, such as overriding the global failOpen behavior
+   * @returns A promise resolving to the rate limit check result
+   */
   async check(
     key: string,
     config: MiddlewareOptionsInput = {},
