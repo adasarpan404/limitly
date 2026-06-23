@@ -43,6 +43,7 @@ export {
   resolveAlgorithmConfig,
   resolveMiddlewareOptions,
 } from "./utils/defaults";
+export { applyRetryAfterJitter } from "./utils/jitter";
 export { consumeRateLimit } from "./utils/metrics";
 export type { RateLimitCheckOutcome } from "./utils/metrics";
 export type { RateLimitSpan, RateLimitTracer } from "./observability/types";

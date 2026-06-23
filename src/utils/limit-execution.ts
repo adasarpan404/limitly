@@ -5,6 +5,7 @@ import type {
   RateLimitResult,
   RateLimitStrategy,
 } from "../types";
+import { applyRetryAfterJitter } from "./jitter";
 import { consumeRateLimit } from "./metrics";
 
 export function isConcurrencyAlgorithm(
@@ -42,7 +43,10 @@ export async function processLimitRequest(params: {
 
   const result = outcome.result;
   if (!result.allowed) {
-    return { status: "blocked", result };
+    return {
+      status: "blocked",
+      result: applyRetryAfterJitter(result, options.retryAfterJitter),
+    };
   }
 
   return {

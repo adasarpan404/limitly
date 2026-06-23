@@ -13,6 +13,7 @@ import {
   resolveAlgorithmConfig,
   resolveMiddlewareOptions,
 } from "./utils/defaults";
+import { applyRetryAfterJitter } from "./utils/jitter";
 import { consumeRateLimit } from "./utils/metrics";
 import type { FastifyPluginAsync } from "fastify";
 import type { CanActivate, Type } from "@nestjs/common";
@@ -140,6 +141,13 @@ export class RedisLimit {
         return this.createFailOpenResult(resolved);
       }
       throw outcome.error;
+    }
+
+    if (!outcome.result.allowed) {
+      return applyRetryAfterJitter(
+        outcome.result,
+        resolved.retryAfterJitter
+      );
     }
 
     return outcome.result;

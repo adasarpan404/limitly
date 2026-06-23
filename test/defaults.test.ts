@@ -9,7 +9,10 @@ import {
 
 describe("resolveMiddlewareOptions", () => {
   it("uses gcra defaults when no options provided", () => {
-    expect(resolveMiddlewareOptions()).toEqual(DEFAULT_GCRA);
+    expect(resolveMiddlewareOptions()).toEqual({
+      ...DEFAULT_GCRA,
+      retryAfterJitter: 0,
+    });
   });
 
   it("merges limiter-level defaults", () => {
@@ -23,6 +26,7 @@ describe("resolveMiddlewareOptions", () => {
       limit: 50,
       window: 30,
       key: expect.any(Function),
+      retryAfterJitter: 0,
     });
   });
 
@@ -33,6 +37,7 @@ describe("resolveMiddlewareOptions", () => {
       algorithm: "gcra",
       limit: 10,
       window: 30,
+      retryAfterJitter: 0,
     });
   });
 
@@ -47,6 +52,7 @@ describe("resolveMiddlewareOptions", () => {
       algorithm: "sliding-window",
       limit: 20,
       window: 15,
+      retryAfterJitter: 0,
     });
   });
 
@@ -61,6 +67,7 @@ describe("resolveMiddlewareOptions", () => {
       algorithm: "token-bucket",
       capacity: 20,
       refillRate: 5,
+      retryAfterJitter: 0,
     });
   });
 
@@ -71,6 +78,7 @@ describe("resolveMiddlewareOptions", () => {
       algorithm: "token-bucket",
       capacity: 25,
       refillRate: DEFAULT_TOKEN_BUCKET.refillRate,
+      retryAfterJitter: 0,
     });
   });
 });

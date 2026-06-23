@@ -420,6 +420,22 @@ Retry-After: 15
 
 Disable with `headers: false`.
 
+### Retry-After Jitter
+
+When many clients hit a limit at once, they can all retry at the same `Retry-After`
+and cause a thundering herd. Add jitter to spread retries out:
+
+```typescript
+limiter.middleware({
+  limit: 100,
+  window: 60,
+  retryAfterJitter: 5, // add 0-5 extra seconds (default: 0)
+});
+```
+
+Jitter is applied to blocked responses only. Metrics still report the underlying
+store result.
+
 ## Custom Limit Response
 
 ```typescript

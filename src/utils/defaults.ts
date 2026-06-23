@@ -43,6 +43,7 @@ function pickBaseOptions(
     onMetrics: options.onMetrics,
     tracer: options.tracer,
     failOpen: options.failOpen,
+    retryAfterJitter: options.retryAfterJitter ?? 0,
   };
 }
 

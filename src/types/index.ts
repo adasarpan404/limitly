@@ -150,6 +150,11 @@ export interface BaseMiddlewareOptions {
   onMetrics?: RateLimitMetricsHook | RateLimitMetricsHook[];
   tracer?: RateLimitTracer;
   failOpen?: boolean;
+  /**
+   * Max extra seconds to add to `Retry-After` when rate limited (0-`retryAfterJitter`).
+   * Defaults to 0 (disabled). Helps reduce thundering herd on retries.
+   */
+  retryAfterJitter?: number;
 }
 
 export type MiddlewareOptions = BaseMiddlewareOptions & AlgorithmConfig;
