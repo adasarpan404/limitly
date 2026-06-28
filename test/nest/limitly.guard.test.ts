@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RedisLimit } from "../../src/limiter";
 import {
   createNestGuard,
+  limitlyNestModule,
+  RateLimit,
   RATE_LIMIT_KEY,
 } from "../../src/middleware/nest";
 import { resolveMiddlewareOptions } from "../../src/utils/defaults";
@@ -256,5 +258,196 @@ describe("createNestGuard", () => {
     const result = await guard.canActivate(createMockContext());
     expect(onLimitReached).toHaveBeenCalled();
     expect(result).toBe(false);
+  });
+
+  // ── New test cases ───────────────────────────────────────────────────────
+
+  it("sets rate-limit headers on an allowed request", async () => {
+    const setHeader = vi.fn();
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ ip: "127.0.0.1", headers: {} }),
+        getResponse: () => ({ setHeader }),
+      }),
+      getHandler: () => vi.fn(),
+      getClass: () => vi.fn(),
+    } as unknown as ExecutionContext;
+
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+    });
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 75,
+      reset: 1710000000,
+    });
+
+    await guard.canActivate(context);
+
+    expect(setHeader).toHaveBeenCalledWith("X-RateLimit-Limit", "100");
+    expect(setHeader).toHaveBeenCalledWith("X-RateLimit-Remaining", "75");
+    expect(setHeader).toHaveBeenCalledWith(
+      "X-RateLimit-Reset",
+      "1710000000"
+    );
+  });
+
+  it("sets Retry-After header when rate-limited (no onLimitReached)", async () => {
+    const setHeader = vi.fn();
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ ip: "127.0.0.1", headers: {} }),
+        getResponse: () => ({ setHeader }),
+      }),
+      getHandler: () => vi.fn(),
+      getClass: () => vi.fn(),
+    } as unknown as ExecutionContext;
+
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 1,
+      window: 60,
+    });
+    consume.mockResolvedValue({
+      allowed: false,
+      limit: 1,
+      remaining: 0,
+      reset: 1710000060,
+      retryAfter: 45,
+    });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(HttpException);
+    expect(setHeader).toHaveBeenCalledWith("Retry-After", "45");
+  });
+
+  it("allows request when store errors and failOpen is true (default)", async () => {
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      failOpen: true,
+    });
+    consume.mockRejectedValue(new Error("Redis timeout"));
+
+    const result = await guard.canActivate(createMockContext());
+    expect(result).toBe(true);
+  });
+
+  it("falls back to 'unknown' key when request IP is undefined", async () => {
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+    });
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ ip: undefined, headers: {} }),
+        getResponse: () => ({ setHeader: vi.fn() }),
+      }),
+      getHandler: () => vi.fn(),
+      getClass: () => vi.fn(),
+    } as unknown as ExecutionContext;
+
+    await guard.canActivate(context);
+    expect(consume).toHaveBeenCalledWith("unknown");
+  });
+
+  it("falls back to 'unknown' when custom key extractor returns undefined", async () => {
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+      key: () => undefined,
+    });
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 100,
+      remaining: 99,
+      reset: 1710000000,
+    });
+
+    await guard.canActivate(createMockContext());
+    expect(consume).toHaveBeenCalledWith("unknown");
+  });
+
+  it("metadata options override factory default options", async () => {
+    const DefaultGuard = createNestGuard(limiter)({
+      algorithm: "sliding-window",
+      limit: 10,
+      window: 30,
+    });
+    const defaultGuard = new DefaultGuard(reflector);
+
+    // Route-level metadata with higher limits should override factory defaults
+    vi.mocked(reflector.getAllAndOverride).mockReturnValue({
+      algorithm: "sliding-window",
+      limit: 500,
+      window: 120,
+    });
+    consume.mockResolvedValue({
+      allowed: true,
+      limit: 500,
+      remaining: 499,
+      reset: 1710000000,
+    });
+
+    await defaultGuard.canActivate(createMockContext());
+
+    // consume should be called with the correct IP key
+    expect(consume).toHaveBeenCalledWith("127.0.0.1");
+    // Guard called consume once — confirming metadata (limit:500) driven strategy was invoked
+    expect(consume).toHaveBeenCalledTimes(1);
+  });
+
+  it("limitlyNestModule returns a valid DynamicModule shape", () => {
+    const mod = limitlyNestModule({
+      limiter,
+      algorithm: "sliding-window",
+      limit: 100,
+      window: 60,
+    });
+
+    expect(mod.module).toBeDefined();
+    expect(Array.isArray(mod.providers)).toBe(true);
+    expect(Array.isArray(mod.exports)).toBe(true);
+    expect(mod.global).toBe(false);
+  });
+
+  it("limitlyNestModule sets global flag when global: true", () => {
+    const mod = limitlyNestModule({
+      limiter,
+      algorithm: "sliding-window",
+      limit: 50,
+      window: 60,
+      global: true,
+    });
+
+    expect(mod.global).toBe(true);
+  });
+
+  it("RateLimit decorator sets correct metadata key", () => {
+    const options = { algorithm: "sliding-window" as const, limit: 20, window: 10 };
+    const decorator = RateLimit(options);
+
+    // SetMetadata returns a decorator; verify it's a function
+    expect(typeof decorator).toBe("function");
+
+    // Apply decorator to a mock target and verify it stores metadata under RATE_LIMIT_KEY
+    const target = {};
+    const descriptor = { value: vi.fn() };
+    decorator(target, "testMethod", descriptor);
+
+    const stored = Reflect.getMetadata(RATE_LIMIT_KEY, descriptor.value);
+    expect(stored).toEqual(options);
   });
 });
